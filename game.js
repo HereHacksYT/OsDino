@@ -1,9 +1,13 @@
 // --- SİSTEM DEĞİŞKENLERİ ---
 let scene, camera, renderer;
-let player, playerScale = 1.0; 
+let player, playerScale = 1.0;
+let playerModel; // GLB model için
 const baseMoveSpeed = 0.132;
 
 let gameStarted = false;
+let gameLoaded = false; // GLB yüklendi mi?
+let loadingProgress = 0; // Yükleme yüzdesi
+
 let walkCycle = 0;
 let tailMesh, leftArmMesh, rightArmMesh, leftLegMesh, rightLegMesh;
 
@@ -31,12 +35,19 @@ const tierValEl = document.getElementById('tier-val');
 const warningMsgEl = document.getElementById('warning-msg');
 const timerValEl = document.getElementById('timer-val');
 const timerDisplayEl = document.getElementById('timer-display');
+const loadingScreenEl = document.getElementById('loading-screen');
+const loadingBarEl = document.getElementById('loading-bar');
+const loadingTextEl = document.getElementById('loading-text');
+const playBtnEl = document.getElementById('play-btn');
 let warningTimeout = null;
 
 const AI_COLORS = [0x3182ce, 0x805ad5, 0xdd6b20, 0xe53e3e, 0x319795];
 
 let dangerTimer = 20;
 let lastTimerUpdate = Date.now();
+
+// GLB Loader
+let gltfLoader;
 
 // --- BAŞLANGIÇ (INIT) ---
 function init() {
@@ -70,7 +81,11 @@ function init() {
     createMapBorders();
     createCityGrid();
 
-    createOsDino();       
+    // GLTF Loader oluştur
+    gltfLoader = new THREE.GLTFLoader();
+    
+    // GLB modelini yükle
+    loadDinoModel();
     
     spawnCityAssets(45, 15, 45); 
     spawnAIDinos();      
@@ -81,6 +96,119 @@ function init() {
     if (timerDisplayEl) timerDisplayEl.style.display = 'none';
 
     animate();
+}
+
+function loadDinoModel() {
+    updateLoadingProgress(0, "Dinozor modeli yükleniyor...");
+    
+    // GLB dosyasını yükle (dosya adını kendi dosyana göre değiştir)
+    gltfLoader.load(
+        'dino.glb', // GLB dosyanın adı
+        (gltf) => {
+            // Model yüklendi
+            playerModel = gltf.scene;
+            updateLoadingProgress(100, "Model yüklendi!");
+            
+            // Modeli hazırla
+            playerModel.traverse((node) => {
+                if (node.isMesh) {
+                    node.castShadow = true;
+                    node.receiveShadow = true;
+                }
+            });
+            
+            // Modeli oyuncu olarak ayarla
+            player = playerModel;
+            player.position.set(0, 0, 0);
+            scene.add(player);
+            
+            // Modelin parçalarını bul (animasyon için)
+            player.traverse((node) => {
+                if (node.name.toLowerCase().includes('tail') || 
+                    node.name.toLowerCase().includes('kuyruk')) {
+                    tailMesh = node;
+                }
+                if (node.name.toLowerCase().includes('arm') || 
+                    node.name.toLowerCase().includes('kol')) {
+                    if (node.position.x > 0) rightArmMesh = node;
+                    else leftArmMesh = node;
+                }
+                if (node.name.toLowerCase().includes('leg') || 
+                    node.name.toLowerCase().includes('bacak')) {
+                    if (node.position.x > 0) rightLegMesh = node;
+                    else leftLegMesh = node;
+                }
+            });
+            
+            updatePlayerPhysicalSize();
+            
+            // Yükleme tamamlandı
+            setTimeout(() => {
+                gameLoaded = true;
+                if (loadingScreenEl) {
+                    loadingScreenEl.style.opacity = '0';
+                    setTimeout(() => {
+                        loadingScreenEl.style.display = 'none';
+                    }, 500);
+                }
+                // Play butonunu aktif et
+                if (playBtnEl) {
+                    playBtnEl.style.opacity = '1';
+                    playBtnEl.style.pointerEvents = 'auto';
+                }
+            }, 500);
+        },
+        (xhr) => {
+            // Yükleme ilerlemesi
+            if (xhr.total > 0) {
+                const percent = Math.round((xhr.loaded / xhr.total) * 90); // Max 90%, son %10 model işleme
+                updateLoadingProgress(percent, `Dinozor yükleniyor... %${percent}`);
+            }
+        },
+        (error) => {
+            // Hata durumunda yedek model
+            console.warn('GLB yüklenemedi, yedek model kullanılıyor:', error);
+            updateLoadingProgress(100, "Yedek model oluşturuluyor...");
+            createBackupDino();
+        }
+    );
+}
+
+function createBackupDino() {
+    // GLB yüklenemezse eski modeli kullan
+    const dino = buildDinoMesh(0x22c55e);
+    player = dino.group;
+    tailMesh = dino.tail;
+    leftArmMesh = dino.leftArm;
+    rightArmMesh = dino.rightArm;
+    leftLegMesh = dino.leftLeg;
+    rightLegMesh = dino.rightLeg;
+    player.position.set(0, 0, 0);
+    scene.add(player);
+    
+    updatePlayerPhysicalSize();
+    
+    gameLoaded = true;
+    if (loadingScreenEl) {
+        loadingScreenEl.style.opacity = '0';
+        setTimeout(() => {
+            loadingScreenEl.style.display = 'none';
+        }, 500);
+    }
+    if (playBtnEl) {
+        playBtnEl.style.opacity = '1';
+        playBtnEl.style.pointerEvents = 'auto';
+    }
+}
+
+function updateLoadingProgress(percent, text) {
+    loadingProgress = percent;
+    if (loadingBarEl) {
+        loadingBarEl.style.width = percent + '%';
+    }
+    if (loadingTextEl) {
+        loadingTextEl.textContent = text;
+    }
 }
 
 function createMapBorders() {
@@ -315,7 +443,6 @@ function buildDinoMesh(colorHex) {
     leftArm.rotation.x = -0.3;
     leftArm.castShadow = true;
     group.add(leftArm);
-    leftArmMesh = leftArm;
 
     const rightArm = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 0.55, 8), skinMat);
     rightArm.position.set(-0.4, 0.55, 0.5);
@@ -323,7 +450,6 @@ function buildDinoMesh(colorHex) {
     rightArm.rotation.x = -0.3;
     rightArm.castShadow = true;
     group.add(rightArm);
-    rightArmMesh = rightArm;
 
     // --- PENÇELER ---
     for (let side = -1; side <= 1; side += 2) {
@@ -340,13 +466,11 @@ function buildDinoMesh(colorHex) {
     leftLeg.position.set(0.35, 0.25, -0.3);
     leftLeg.castShadow = true;
     group.add(leftLeg);
-    leftLegMesh = leftLeg;
 
     const rightLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.5, 10), skinMat);
     rightLeg.position.set(-0.35, 0.25, -0.3);
     rightLeg.castShadow = true;
     group.add(rightLeg);
-    rightLegMesh = rightLeg;
 
     // --- AYAKLAR ---
     for (let side = -1; side <= 1; side += 2) {
@@ -369,7 +493,6 @@ function buildDinoMesh(colorHex) {
     tail.castShadow = true;
     group.add(tail);
 
-    // Kuyruk ucu
     const tailTip = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), darkSkinMat);
     tailTip.position.set(0, 0.15, -1.3);
     group.add(tailTip);
@@ -377,25 +500,11 @@ function buildDinoMesh(colorHex) {
     return { 
         group, 
         tail, 
-        leftArm: leftArmMesh, 
-        rightArm: rightArmMesh,
-        leftLeg: leftLegMesh,
-        rightLeg: rightLegMesh
+        leftArm, 
+        rightArm,
+        leftLeg,
+        rightLeg
     };
-}
-
-function createOsDino() {
-    const dino = buildDinoMesh(0x22c55e);
-    player = dino.group;
-    tailMesh = dino.tail;
-    leftArmMesh = dino.leftArm;
-    rightArmMesh = dino.rightArm;
-    leftLegMesh = dino.leftLeg;
-    rightLegMesh = dino.rightLeg;
-    player.position.set(0, 0, 0);
-    scene.add(player);
-    
-    updatePlayerPhysicalSize();
 }
 
 function spawnCityAssets(buildingCount, carCount, botCount) {
@@ -546,6 +655,7 @@ function getEatRange() {
 }
 
 function updatePlayerPhysicalSize() {
+    if (!player) return;
     const visScale = calculateVisualScale(playerScale);
     player.scale.set(visScale, visScale, visScale);
 
@@ -562,7 +672,7 @@ function updatePlayerPhysicalSize() {
         tierText = "🦖 Büyük";
     }
 
-    tierValEl.innerText = tierText;
+    if (tierValEl) tierValEl.innerText = tierText;
 }
 
 function updateAIDinoPhysicalSize(ai) {
@@ -591,7 +701,7 @@ function getBuildingRequiredSize(buildingHeight) {
 function growPlayer(amount) {
     const oldScale = playerScale;
     playerScale += amount;
-    sizeValEl.innerText = playerScale.toFixed(1) + "m";
+    if (sizeValEl) sizeValEl.innerText = playerScale.toFixed(1) + "m";
     
     if (oldScale < 10 && playerScale >= 10) {
         triggerEvolutionUI("🦖 BÜYÜK DİNOZOR!");
@@ -609,13 +719,15 @@ function growPlayer(amount) {
 }
 
 function showSizeWarning(requiredSize) {
-    warningMsgEl.innerText = `${requiredSize.toFixed(1)}m gerekli!`;
-    warningMsgEl.style.color = '#ef4444';
-    warningMsgEl.style.display = 'block';
+    if (warningMsgEl) {
+        warningMsgEl.innerText = `${requiredSize.toFixed(1)}m gerekli!`;
+        warningMsgEl.style.color = '#ef4444';
+        warningMsgEl.style.display = 'block';
+    }
 
     if (warningTimeout) clearTimeout(warningTimeout);
     warningTimeout = setTimeout(() => {
-        warningMsgEl.style.display = 'none';
+        if (warningMsgEl) warningMsgEl.style.display = 'none';
     }, 1200);
 }
 
@@ -625,24 +737,28 @@ function setupAdminPanel() {
     const adminApplyBtn = document.getElementById('admin-apply-btn');
     const adminSizeInput = document.getElementById('admin-size-input');
 
-    adminBtn.addEventListener('click', () => {
-        const pw = prompt("OsDino Admin Şifresi:");
-        if (pw === "osman123") {
-            alert("Sisteme erişildi!");
-            adminControls.style.display = 'block';
-        } else {
-            alert("Şifre Yanlış!");
-        }
-    });
+    if (adminBtn) {
+        adminBtn.addEventListener('click', () => {
+            const pw = prompt("OsDino Admin Şifresi:");
+            if (pw === "osman123") {
+                alert("Sisteme erişildi!");
+                if (adminControls) adminControls.style.display = 'block';
+            } else {
+                alert("Şifre Yanlış!");
+            }
+        });
+    }
 
-    adminApplyBtn.addEventListener('click', () => {
-        const newSize = parseFloat(adminSizeInput.value);
-        if (!isNaN(newSize) && newSize > 0) {
-            playerScale = newSize;
-            sizeValEl.innerText = playerScale.toFixed(1) + "m";
-            updatePlayerPhysicalSize();
-        }
-    });
+    if (adminApplyBtn) {
+        adminApplyBtn.addEventListener('click', () => {
+            const newSize = parseFloat(adminSizeInput.value);
+            if (!isNaN(newSize) && newSize > 0) {
+                playerScale = newSize;
+                if (sizeValEl) sizeValEl.innerText = playerScale.toFixed(1) + "m";
+                updatePlayerPhysicalSize();
+            }
+        });
+    }
 }
 
 function setupControls() {
@@ -650,54 +766,63 @@ function setupControls() {
     window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
     window.addEventListener('resize', onWindowResize);
 
-    document.getElementById('play-btn').addEventListener('click', () => {
-        document.getElementById('start-screen').style.display = 'none';
-        gameStarted = true;
-        lastTimerUpdate = Date.now();
-    });
+    if (playBtnEl) {
+        playBtnEl.addEventListener('click', () => {
+            if (!gameLoaded) {
+                alert("Dinozor modeli henüz yüklenmedi, lütfen bekleyin!");
+                return;
+            }
+            document.getElementById('start-screen').style.display = 'none';
+            gameStarted = true;
+            lastTimerUpdate = Date.now();
+        });
+    }
 
     const joystickContainer = document.getElementById('joystick-container');
     const joystickKnob = document.getElementById('joystick-knob');
 
-    const handleJoystickMove = (e) => {
-        e.preventDefault();
-        const touch = e.touches ? e.touches[0] : e;
-        const rect = joystickContainer.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
-        
-        let dx = touch.clientX - centerX;
-        let dy = touch.clientY - centerY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const maxLimit = rect.width / 2;
+    if (joystickContainer && joystickKnob) {
+        const handleJoystickMove = (e) => {
+            e.preventDefault();
+            const touch = e.touches ? e.touches[0] : e;
+            const rect = joystickContainer.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            let dx = touch.clientX - centerX;
+            let dy = touch.clientY - centerY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const maxLimit = rect.width / 2;
 
-        if (distance > maxLimit) {
-            dx = (dx / distance) * maxLimit;
-            dy = (dy / distance) * maxLimit;
-        }
+            if (distance > maxLimit) {
+                dx = (dx / distance) * maxLimit;
+                dy = (dy / distance) * maxLimit;
+            }
 
-        joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
-        joystickVector.x = dx / maxLimit;
-        joystickVector.y = dy / maxLimit;
-        joystickActive = true;
-    };
+            joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+            joystickVector.x = dx / maxLimit;
+            joystickVector.y = dy / maxLimit;
+            joystickActive = true;
+        };
 
-    const resetJoystick = () => {
-        joystickKnob.style.transform = 'translate(0px, 0px)';
-        joystickVector = { x: 0, y: 0 };
-        joystickActive = false;
-    };
+        const resetJoystick = () => {
+            joystickKnob.style.transform = 'translate(0px, 0px)';
+            joystickVector = { x: 0, y: 0 };
+            joystickActive = false;
+        };
 
-    joystickContainer.addEventListener('touchstart', (e) => { joystickActive = true; handleJoystickMove(e); });
-    joystickContainer.addEventListener('touchmove', handleJoystickMove);
-    joystickContainer.addEventListener('touchend', resetJoystick);
-
-    joystickContainer.addEventListener('mousedown', () => { joystickActive = true; });
-    window.addEventListener('mousemove', (e) => { if(joystickActive) handleJoystickMove(e); });
-    window.addEventListener('mouseup', resetJoystick);
+        joystickContainer.addEventListener('touchstart', (e) => { joystickActive = true; handleJoystickMove(e); });
+        joystickContainer.addEventListener('touchmove', handleJoystickMove);
+        joystickContainer.addEventListener('touchend', resetJoystick);
+        joystickContainer.addEventListener('mousedown', () => { joystickActive = true; });
+        window.addEventListener('mousemove', (e) => { if(joystickActive) handleJoystickMove(e); });
+        window.addEventListener('mouseup', resetJoystick);
+    }
 }
 
 function updatePlayer() {
+    if (!player || !gameStarted) return;
+    
     let moveX = 0;
     let moveZ = 0;
 
@@ -747,7 +872,7 @@ function updatePlayer() {
                 player.position.z = nextZ;
 
                 walkCycle += 0.25;
-                // Yürüme animasyonu
+                // Yürüme animasyonu (GLB model için çalışmayabilir)
                 if (leftArmMesh && rightArmMesh) {
                     leftArmMesh.rotation.x = Math.sin(walkCycle) * 0.4 - 0.3;
                     rightArmMesh.rotation.x = Math.sin(walkCycle + Math.PI) * 0.4 - 0.3;
@@ -763,6 +888,7 @@ function updatePlayer() {
 }
 
 function updateCarsAndBots() {
+    if (!gameStarted) return;
     const eatRange = getEatRange();
     
     for (let car of cars) {
@@ -782,7 +908,7 @@ function updateCarsAndBots() {
             }
         }
 
-        if (player.position.distanceTo(car.position) < eatRange) {
+        if (player && player.position.distanceTo(car.position) < eatRange) {
             scene.remove(car);
             cars.splice(cars.indexOf(car), 1);
             growPlayer(0.35); 
@@ -798,7 +924,7 @@ function updateCarsAndBots() {
             bot.userData.angle += Math.PI;
         }
 
-        if (player.position.distanceTo(bot.position) < eatRange) {
+        if (player && player.position.distanceTo(bot.position) < eatRange) {
             scene.remove(bot);
             bots.splice(bots.indexOf(bot), 1);
             growPlayer(0.18); 
@@ -808,24 +934,19 @@ function updateCarsAndBots() {
 }
 
 function updateAIDinos() {
+    if (!gameStarted) return;
+    
     for (let ai of aiDinos) {
-        const distToPlayer = ai.mesh.position.distanceTo(player.position);
+        const distToPlayer = player ? ai.mesh.position.distanceTo(player.position) : 100;
 
         const boundaryThreshold = MAP_SIZE - 4;
         if (Math.abs(ai.mesh.position.x) > boundaryThreshold || Math.abs(ai.mesh.position.z) > boundaryThreshold) {
             ai.angle = Math.atan2(0 - ai.mesh.position.x, 0 - ai.mesh.position.z);
         } else {
-            let targetPos = null;
             if (distToPlayer <= 25 && ai.scale > playerScale) {
-                targetPos = player.position; 
+                ai.angle = Math.atan2(player.position.x - ai.mesh.position.x, player.position.z - ai.mesh.position.z);
             } else {
-                if (!targetPos) {
-                    ai.angle += (Math.random() - 0.5) * 0.02;
-                }
-            }
-
-            if (targetPos) {
-                ai.angle = Math.atan2(targetPos.x - ai.mesh.position.x, targetPos.z - ai.mesh.position.z);
+                ai.angle += (Math.random() - 0.5) * 0.02;
             }
         }
 
@@ -863,7 +984,6 @@ function updateAIDinos() {
             if (ai.scale > playerScale) {
                 ai.indicator.innerHTML = '☠️';
                 ai.indicator.style.color = '#ef4444';
-                ai.indicator.style.transform = `rotate(0deg)`;
             } else {
                 ai.indicator.innerHTML = '▲';
                 ai.indicator.style.color = '#22c55e';
@@ -873,16 +993,14 @@ function updateAIDinos() {
             ai.indicator.style.display = 'none';
         }
 
-        if (distToPlayer < 1.0) {
+        if (player && distToPlayer < 1.0) {
             if (playerScale > ai.scale) {
                 const savedColor = ai.colorHex;
                 scene.remove(ai.mesh);
                 ai.label.remove();
                 ai.indicator.remove();
                 aiDinos.splice(aiDinos.indexOf(ai), 1);
-
                 growPlayer(ai.scale * 0.25);
-
                 setTimeout(() => {
                     const respawned = createSingleAIDino(savedColor, playerScale * 0.85);
                     aiDinos.push(respawned);
@@ -904,27 +1022,18 @@ function eatBuilding(building) {
         if (scaleVal <= 0.05) {
             clearInterval(shrink);
             scene.remove(building);
-            
-            setTimeout(() => {
-                respawnBuilding(building);
-            }, 6000); 
+            setTimeout(() => respawnBuilding(building), 6000); 
         } else {
             building.scale.set(scaleVal, scaleVal, scaleVal);
         }
     }, 25);
 
     let pointsMultiplier = 1;
-    if (playerScale >= 100000) {
-        pointsMultiplier = 3125;
-    } else if (playerScale >= 10000) {
-        pointsMultiplier = 625;
-    } else if (playerScale >= 1000) {
-        pointsMultiplier = 125;
-    } else if (playerScale >= 100) {
-        pointsMultiplier = 25;
-    } else if (playerScale >= 10) {
-        pointsMultiplier = 5;
-    }
+    if (playerScale >= 100000) pointsMultiplier = 3125;
+    else if (playerScale >= 10000) pointsMultiplier = 625;
+    else if (playerScale >= 1000) pointsMultiplier = 125;
+    else if (playerScale >= 100) pointsMultiplier = 25;
+    else if (playerScale >= 10) pointsMultiplier = 5;
     
     growPlayer(building.userData.height * 0.2 * pointsMultiplier);
 }
@@ -946,13 +1055,7 @@ function respawnBuilding(oldBuilding) {
     const bColor = buildingColors[Math.floor(Math.random() * buildingColors.length)];
     const bGroup = createDetailedBuilding(w, h, bColor);
     bGroup.position.set(x, h/2, z);
-
-    bGroup.userData = { 
-        width: w, 
-        height: h, 
-        isEaten: false, 
-    };
-
+    bGroup.userData = { width: w, height: h, isEaten: false };
     scene.add(bGroup);
     buildings.push(bGroup);
 }
@@ -964,7 +1067,6 @@ function respawnCar() {
         const validRoads = ROAD_COORDS.filter(p => Math.abs(p) < MAP_SIZE);
         randomRoadPos = validRoads[Math.floor(Math.random() * validRoads.length)] || 0;
     }
-
     car.position.y = 0.35;
     car.castShadow = true;
     car.userData = {
@@ -973,7 +1075,6 @@ function respawnCar() {
         roadPos: randomRoadPos,
         dir: 1
     };
-
     if (car.userData.isDikey) {
         car.position.x = randomRoadPos;
         car.position.z = (Math.random() - 0.5) * (MAP_SIZE * 1.6);
@@ -982,7 +1083,6 @@ function respawnCar() {
         car.position.z = randomRoadPos;
         car.rotation.y = Math.PI / 2;
     }
-
     scene.add(car);
     cars.push(car);
 }
@@ -994,26 +1094,21 @@ function respawnBot() {
         bx = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
         bz = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
     } while (Math.sqrt(bx*bx + bz*bz) < 12 || isPointOnRoad(bx, bz, 1.0));
-
     bot.position.set(bx, 0.35, bz);
     bot.userData = { angle: Math.random() * Math.PI * 2, speed: 0.0385 };
     scene.add(bot);
     bots.push(bot);
 }
 
-// --- AI BÜYÜME SİSTEMİ ---
 function updateDangerTimer() {
     const now = Date.now();
     if (now - lastTimerUpdate >= 1000) {
         dangerTimer--;
         lastTimerUpdate = now;
-
         if (dangerTimer <= 0) {
             dangerTimer = 20;
-
             for (let ai of aiDinos) {
-                const distToPlayer = ai.mesh.position.distanceTo(player.position);
-
+                const distToPlayer = player ? ai.mesh.position.distanceTo(player.position) : 100;
                 if (distToPlayer > 30) {
                     ai.scale *= 1.20;
                     updateAIDinoPhysicalSize(ai);
@@ -1023,13 +1118,11 @@ function updateDangerTimer() {
                 }
             }
         }
-        // Sayaç gizli ama çalışıyor
         if (timerValEl) timerValEl.innerText = dangerTimer;
     }
-
     for (let ai of aiDinos) {
         if (ai.needsDelayedGrowth) {
-            const distToPlayer = ai.mesh.position.distanceTo(player.position);
+            const distToPlayer = player ? ai.mesh.position.distanceTo(player.position) : 100;
             if (distToPlayer > 30) {
                 ai.scale *= 1.20;
                 updateAIDinoPhysicalSize(ai);
@@ -1040,13 +1133,14 @@ function updateDangerTimer() {
 }
 
 function triggerEvolutionUI(message) {
-    warningMsgEl.innerText = message;
-    warningMsgEl.style.color = '#22c55e';
-    warningMsgEl.style.display = 'block';
-    
+    if (warningMsgEl) {
+        warningMsgEl.innerText = message;
+        warningMsgEl.style.color = '#22c55e';
+        warningMsgEl.style.display = 'block';
+    }
     if (warningTimeout) clearTimeout(warningTimeout);
     warningTimeout = setTimeout(() => {
-        warningMsgEl.style.display = 'none';
+        if (warningMsgEl) warningMsgEl.style.display = 'none';
     }, 2000);
 }
 
@@ -1056,29 +1150,34 @@ function onWindowResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// --- KAMERA VE OYUN DÖNGÜSÜ ---
 function animate() {
     requestAnimationFrame(animate);
-
+    
+    // Yükleme ekranındayken de render et (arka plan görünsün)
     if (!gameStarted) {
-        renderer.render(scene, camera);
-        return;
+        // Kamerayı döndürerek havalı bir giriş efekti
+        const time = Date.now() * 0.0005;
+        camera.position.x = Math.sin(time) * 15;
+        camera.position.z = Math.cos(time) * 15;
+        camera.position.y = 8;
+        camera.lookAt(0, 0, 0);
     }
 
-    updateDangerTimer();
-    updatePlayer();
-    updateCarsAndBots();
-    updateAIDinos();
+    if (gameStarted && player) {
+        updateDangerTimer();
+        updatePlayer();
+        updateCarsAndBots();
+        updateAIDinos();
 
-    const visScale = calculateVisualScale(playerScale);
-    const targetCamY = player.position.y + (3.8 * visScale);
-    const targetCamZ = player.position.z - (5.8 * visScale);
+        const visScale = calculateVisualScale(playerScale);
+        const targetCamY = player.position.y + (3.8 * visScale);
+        const targetCamZ = player.position.z - (5.8 * visScale);
 
-    camera.position.x = THREE.MathUtils.lerp(camera.position.x, player.position.x, 0.08);
-    camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCamY, 0.08);
-    camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetCamZ, 0.08);
-    
-    camera.lookAt(player.position.x, player.position.y + (0.5 * visScale), player.position.z);
+        camera.position.x = THREE.MathUtils.lerp(camera.position.x, player.position.x, 0.08);
+        camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCamY, 0.08);
+        camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetCamZ, 0.08);
+        camera.lookAt(player.position.x, player.position.y + (0.5 * visScale), player.position.z);
+    }
 
     renderer.render(scene, camera);
 }
