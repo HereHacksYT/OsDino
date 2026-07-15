@@ -1,7 +1,7 @@
 // --- SİSTEM DEĞİŞKENLERİ ---
 let scene, camera, renderer;
 let player, playerScale = 1.0;
-let moveSpeed = 0.15;
+const moveSpeed = 0.12; // Bir tık daha kontrollü hız
 
 // Animasyon Değişkenleri
 let walkCycle = 0;
@@ -19,6 +19,12 @@ let cars = [];
 let aiDinos = [];
 const MAP_SIZE = 50; // Toplam 100x100 harita sınırları
 
+// Yol Pozisyonları (Grid koordinatları)
+const ROAD_COORDS = [];
+for (let pos = -MAP_SIZE + 15; pos < MAP_SIZE; pos += 25) {
+    ROAD_COORDS.push(pos);
+}
+
 // UI Elemanları
 const sizeValEl = document.getElementById('size-val');
 const warningMsgEl = document.getElementById('warning-msg');
@@ -27,7 +33,7 @@ let warningTimeout = null;
 // --- BAŞLANGIÇ (INIT) ---
 function init() {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x556677); // Gerçekçi gökyüzü rengi
+    scene.background = new THREE.Color(0x556677);
 
     camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
 
@@ -48,7 +54,7 @@ function init() {
     sunLight.shadow.mapSize.height = 2048;
     scene.add(sunLight);
 
-    // ZEMİN (Şehir Alanı)
+    // ZEMİN
     const floorGeo = new THREE.PlaneGeometry(MAP_SIZE * 2, MAP_SIZE * 2);
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x2d3748, roughness: 0.95 });
     const floor = new THREE.Mesh(floorGeo, floorMat);
@@ -56,14 +62,14 @@ function init() {
     floor.receiveShadow = true;
     scene.add(floor);
 
-    // Harita Sınırları ve Yollar
+    // Sınırlar ve Yollar
     createMapBorders();
     createCityGrid();
 
-    // Nesneleri Yarat
-    createOsDino();       // Karakter tam (0, 0) noktasında doğacak
-    spawnCityAssets();   // Binalar artık bu merkezin uzağına yerleşecek
-    spawnAIDinos();
+    // Varlıkları Oluştur
+    createOsDino();       // Merkeze yerleşir (0, 0)
+    spawnCityAssets();   // Yolları ve merkezi pas geçer
+    spawnAIDinos();      // Toplam 5 AI dinozor ekler (Seninle beraber 6)
     setupControls();
 
     animate();
@@ -90,17 +96,19 @@ function createMapBorders() {
     scene.add(north, south, east, west);
 }
 
-// --- ASFALT YOLLAR ---
+// --- YOLLARIN OLUŞTURULMASI ---
 function createCityGrid() {
     const roadMat = new THREE.MeshStandardMaterial({ color: 0x1a202c, roughness: 0.9 });
-    for (let pos = -MAP_SIZE + 15; pos < MAP_SIZE; pos += 25) {
-        const roadH = new THREE.Mesh(new THREE.PlaneGeometry(MAP_SIZE * 2, 3.5), roadMat);
+    for (let pos of ROAD_COORDS) {
+        // Yatay Yol
+        const roadH = new THREE.Mesh(new THREE.PlaneGeometry(MAP_SIZE * 2, 4), roadMat); // 4 metre genişlik yollar için ideal
         roadH.rotation.x = -Math.PI/2;
         roadH.position.set(0, 0.01, pos);
         roadH.receiveShadow = true;
         scene.add(roadH);
 
-        const roadV = new THREE.Mesh(new THREE.PlaneGeometry(3.5, MAP_SIZE * 2), roadMat);
+        // Dikey Yol
+        const roadV = new THREE.Mesh(new THREE.PlaneGeometry(4, MAP_SIZE * 2), roadMat);
         roadV.rotation.x = -Math.PI/2;
         roadV.position.set(pos, 0.01, 0);
         roadV.receiveShadow = true;
@@ -108,122 +116,99 @@ function createCityGrid() {
     }
 }
 
-// --- KALİTELİ BİNA MODELLEME FONKSİYONU ---
+// --- YOL ÜSTÜ MÜ KONTROLÜ (Binaların yola gelmesini önlemek için) ---
+function isPointOnRoad(x, z, tolerance = 3.5) {
+    for (let pos of ROAD_COORDS) {
+        if (Math.abs(x - pos) < tolerance || Math.abs(z - pos) < tolerance) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// --- DETAYLI BİNA MODELİ ---
 function createDetailedBuilding(width, height, colorHex) {
     const buildingGroup = new THREE.Group();
 
-    // 1. Ana Duvar/Gövde
-    const bodyGeo = new THREE.BoxGeometry(width, height, width);
-    const bodyMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.7, metalness: 0.1 });
-    const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+    // Ana Duvar
+    const bodyMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(width, height, width),
+        new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.7, metalness: 0.1 })
+    );
     bodyMesh.castShadow = true;
     bodyMesh.receiveShadow = true;
     buildingGroup.add(bodyMesh);
 
-    // 2. Çatı Detayları (Su Deposu veya Havalandırma Kutusu)
-    const roofKitGeo = new THREE.BoxGeometry(width * 0.4, height * 0.1, width * 0.4);
-    const roofKitMat = new THREE.MeshStandardMaterial({ color: 0x4a5568, roughness: 0.6 });
-    const roofKit = new THREE.Mesh(roofKitGeo, roofKitMat);
+    // Çatı Çıkıntısı
+    const roofKit = new THREE.Mesh(
+        new THREE.BoxGeometry(width * 0.4, height * 0.1, width * 0.4),
+        new THREE.MeshStandardMaterial({ color: 0x4a5568, roughness: 0.6 })
+    );
     roofKit.position.set(0, height / 2 + (height * 0.05), 0);
-    roofKit.castShadow = true;
     buildingGroup.add(roofKit);
 
-    // 3. 3D Kabartma Pencereler (Düz küp görüntüsünü tamamen yıkar)
-    const winWidth = 0.25;
-    const winHeight = 0.4;
-    const winDepth = 0.05; // Dışa doğru kabartı sağlar
-    const winGeo = new THREE.BoxGeometry(winWidth, winHeight, winDepth);
-    const winMat = new THREE.MeshStandardMaterial({ color: 0xedf2f7, roughness: 0.2, metalness: 0.8 }); // Parlak cam rengi
+    // 3D Kabartma Pencereler
+    const winGeo = new THREE.BoxGeometry(0.25, 0.4, 0.05);
+    const winMat = new THREE.MeshStandardMaterial({ color: 0xedf2f7, roughness: 0.1, metalness: 0.8 });
 
-    // Kat sayısına ve bina genişliğine göre pencereleri dizelim
     const floors = Math.floor(height / 1.5);
     const cols = Math.floor(width / 0.8);
 
     for (let f = 0; f < floors; f++) {
-        const posY = -height / 2 + 0.8 + (f * 1.3); // Her katın yüksekliği
-
+        const posY = -height / 2 + 0.8 + (f * 1.3);
         for (let c = 0; c < cols; c++) {
             const offset = -width / 2 + 0.5 + (c * 0.8);
 
-            // Ön Cephe Pencereleri
             const winFront = new THREE.Mesh(winGeo, winMat);
             winFront.position.set(offset, posY, width / 2 + 0.02);
             buildingGroup.add(winFront);
 
-            // Arka Cephe Pencereleri
             const winBack = new THREE.Mesh(winGeo, winMat);
             winBack.position.set(offset, posY, -width / 2 - 0.02);
             buildingGroup.add(winBack);
-
-            // Sol Cephe Pencereleri (Döndürülmüş)
-            const winLeft = new THREE.Mesh(winGeo, winMat);
-            winLeft.rotation.y = Math.PI / 2;
-            winLeft.position.set(-width / 2 - 0.02, posY, offset);
-            buildingGroup.add(winLeft);
-
-            // Sağ Cephe Pencereleri (Döndürülmüş)
-            const winRight = new THREE.Mesh(winGeo, winMat);
-            winRight.rotation.y = Math.PI / 2;
-            winRight.position.set(width / 2 + 0.02, posY, offset);
-            buildingGroup.add(winRight);
         }
     }
-
-    // 4. Bina Giriş Kapısı (Zeminde tek bir büyük kapı detayı)
-    const doorGeo = new THREE.BoxGeometry(0.8, 1.2, 0.06);
-    const doorMat = new THREE.MeshStandardMaterial({ color: 0x1a202c });
-    const door = new THREE.Mesh(doorGeo, doorMat);
-    door.position.set(0, -height / 2 + 0.6, width / 2 + 0.03);
-    buildingGroup.add(door);
 
     return buildingGroup;
 }
 
-// --- DİNOZOR MODELLEME ŞABLONU ---
+// --- DİNOZOR MODEL TASARIMI ---
 function buildDinoMesh(colorHex) {
     const group = new THREE.Group();
-    const skinMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.3, metalness: 0.1 });
+    const skinMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.3 });
     const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const pupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
 
-    // Gövde
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.7, 32, 32), skinMat);
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 16), skinMat);
     body.scale.set(1, 0.85, 1.3);
     body.position.y = 0.65;
     body.castShadow = true;
     group.add(body);
 
-    // Kafa
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 32, 32), skinMat);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), skinMat);
     head.position.set(0, 1.15, 0.55);
     head.castShadow = true;
     group.add(head);
 
-    // Ağız/Çene
-    const snout = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 16), skinMat);
+    const snout = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 12), skinMat);
     snout.scale.set(1, 0.7, 1.1);
     snout.position.set(0, 1.05, 0.85);
-    snout.castShadow = true;
     group.add(snout);
 
-    // BÜYÜK GÖZLER
-    const eyeGeo = new THREE.SphereGeometry(0.12, 16, 16);
-    const pupilGeo = new THREE.SphereGeometry(0.06, 16, 16);
-
-    const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+    // Büyük Gözler
+    const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), eyeMat);
     eyeL.position.set(0.28, 1.25, 0.7);
-    const pupilL = new THREE.Mesh(pupilGeo, pupilMat);
+    const pupilL = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), pupilMat);
     pupilL.position.set(0.33, 1.25, 0.76);
     group.add(eyeL, pupilL);
 
-    const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+    const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), eyeMat);
     eyeR.position.set(-0.28, 1.25, 0.7);
-    const pupilR = new THREE.Mesh(pupilGeo, pupilMat);
+    const pupilR = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), pupilMat);
     pupilR.position.set(-0.33, 1.25, 0.76);
     group.add(eyeR, pupilR);
 
-    // Kuyruk
-    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.25, 1.1, 16), skinMat);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.25, 1.1, 12), skinMat);
     tail.rotation.x = -Math.PI / 2.8;
     tail.position.set(0, 0.5, -0.9);
     tail.castShadow = true;
@@ -233,38 +218,18 @@ function buildDinoMesh(colorHex) {
 }
 
 function createOsDino() {
-    const dino = buildDinoMesh(0x22c55e); // Yeşil Dino
+    const dino = buildDinoMesh(0x22c55e);
     player = dino.group;
     tailMesh = dino.tail;
-    
-    // Dinozor tam olarak merkeze (0,0,0) konumlandırılıyor
     player.position.set(0, 0, 0);
     scene.add(player);
 }
 
-// --- ŞEHİR DETAYLARI VE GÜVENLİ SPAWN ---
+// --- ŞEHİR ELEMANLARINI YERLEŞTİRME (GÜVENLİ & YOLLARA BASMAYACAK ŞEKİLDE) ---
 function spawnCityAssets() {
     const buildingColors = [0x718096, 0x4a5568, 0x2d3748, 0x805ad5, 0x319795, 0xdd6b20];
-    
-    // 1. Hastane Binası (Detaylı Tasarım)
-    const hospital = new THREE.Group();
-    const hospMain = createDetailedBuilding(7, 8, 0xe2e8f0);
-    hospital.add(hospMain);
 
-    // Çatıdaki Kırmızı Artı İşareti
-    const crossH = new THREE.Mesh(new THREE.BoxGeometry(2, 0.4, 0.6), new THREE.MeshBasicMaterial({ color: 0xe53e3e }));
-    crossH.position.set(0, 4.4, 0);
-    const crossV = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.4, 2), new THREE.MeshBasicMaterial({ color: 0xe53e3e }));
-    crossV.position.set(0, 4.4, 0);
-    hospital.add(crossH, crossV);
-
-    // Başlangıç noktasından (0,0) uzak bir yere yerleştiriyoruz
-    hospital.position.set(12, 4, -12);
-    hospital.userData = { width: 7, height: 8, isEaten: false, color: new THREE.Color(0xe2e8f0) };
-    scene.add(hospital);
-    buildings.push(hospital);
-
-    // 2. Detaylı Evler ve Gökdelenler
+    // Detaylı Evler ve Gökdelenler
     for (let i = 0; i < 40; i++) {
         const h = Math.random() * 8 + 4;
         const w = Math.random() * 1.5 + 2.5;
@@ -273,68 +238,75 @@ function spawnCityAssets() {
         do {
             x = (Math.random() - 0.5) * (MAP_SIZE * 1.7);
             z = (Math.random() - 0.5) * (MAP_SIZE * 1.7);
-        // MERKEZ GÜVENLİK KORUMASI: (0,0) noktasına 15 metreden yakınsa yeniden konumlandır
-        } while (Math.sqrt(x*x + z*z) < 15);
+        // Güvenli Bölge koruması (Merkezden uzak olmalı) ve YOL koruması (Yolların üstüne gelemez)
+        } while (Math.sqrt(x*x + z*z) < 15 || isPointOnRoad(x, z, (w / 2) + 1.5));
 
         const bColor = buildingColors[Math.floor(Math.random() * buildingColors.length)];
         const bGroup = createDetailedBuilding(w, h, bColor);
         bGroup.position.set(x, h / 2, z);
         
-        // Çarpışma ve yeme bilgileri için userData'yı en üst gruba kaydediyoruz
         bGroup.userData = { width: w, height: h, isEaten: false, color: new THREE.Color(bColor) };
-        
         scene.add(bGroup);
         buildings.push(bGroup);
     }
 
-    // 3. Küçük Arabalar
+    // ARABALAR (Yalnızca yolların üzerinde gezinirler)
     const carMat = new THREE.MeshStandardMaterial({ color: 0xd69e2e, roughness: 0.4 });
     for (let i = 0; i < 15; i++) {
         const car = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.6, 0.7), carMat);
-        let cx, cz;
-        do {
-            cx = (Math.random() - 0.5) * (MAP_SIZE * 1.6);
-            cz = (Math.random() - 0.5) * (MAP_SIZE * 1.6);
-        } while (Math.sqrt(cx*cx + cz*cz) < 12);
+        
+        // Rastgele bir yol ve o yol üzerinde rastgele bir başlangıç noktası seçelim
+        const randomRoadPos = ROAD_COORDS[Math.floor(Math.random() * ROAD_COORDS.length)];
+        const isDikey = Math.random() > 0.5;
 
-        car.position.set(cx, 0.3, cz);
+        car.position.y = 0.3;
         car.castShadow = true;
+        
         car.userData = {
-            speed: 0.05 + Math.random() * 0.05,
-            dirX: Math.random() > 0.5 ? 1 : -1,
-            dirZ: Math.random() > 0.5 ? 1 : -1
+            speed: 0.04 + Math.random() * 0.03,
+            isDikey: isDikey,
+            roadPos: randomRoadPos,
+            dir: Math.random() > 0.5 ? 1 : -1
         };
+
+        if (isDikey) {
+            car.position.x = randomRoadPos;
+            car.position.z = (Math.random() - 0.5) * (MAP_SIZE * 1.6);
+            car.rotation.y = 0; // İleri/Geri bakar
+        } else {
+            car.position.x = (Math.random() - 0.5) * (MAP_SIZE * 1.6);
+            car.position.z = randomRoadPos;
+            car.rotation.y = Math.PI / 2; // Sağa/Sola bakar
+        }
+
         scene.add(car);
         cars.push(car);
     }
 
-    // 4. İnsanlar (Botlar)
+    // İnsanlar (Botlar) - Yolların dışına yerleştirilir
     const botMat = new THREE.MeshStandardMaterial({ color: 0x3182ce });
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 45; i++) {
         const bot = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.5, 8), botMat);
         let bx, bz;
         do {
             bx = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
             bz = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
-        } while (Math.sqrt(bx*bx + bz*bz) < 12);
+        } while (Math.sqrt(bx*bx + bz*bz) < 12 || isPointOnRoad(bx, bz, 1.0));
 
         bot.position.set(bx, 0.25, bz);
         bot.castShadow = true;
-        bot.userData = {
-            angle: Math.random() * Math.PI * 2,
-            speed: 0.03
-        };
+        bot.userData = { angle: Math.random() * Math.PI * 2, speed: 0.025 };
         scene.add(bot);
         bots.push(bot);
     }
 }
 
-// --- RAKİP YAPAY ZEKA DİNOZORLAR ---
+// --- RAKİP YAPAY ZEKA DİNOZORLAR (Toplam 5 AI) ---
 function spawnAIDinos() {
-    const aiColors = [0x3182ce, 0x805ad5, 0xdd6b20, 0xe53e3e];
+    const aiColors = [0x3182ce, 0x805ad5, 0xdd6b20, 0xe53e3e, 0x319795]; // 5 Farklı renk
     
-    for (let i = 0; i < 4; i++) {
-        const scale = 0.8 + Math.random() * 0.8;
+    for (let i = 0; i < 5; i++) {
+        const scale = 0.8 + Math.random() * 0.6; // Başlangıç büyüklüğü dengelendi
         const dinoData = buildDinoMesh(aiColors[i]);
         
         const aiGroup = dinoData.group;
@@ -349,35 +321,41 @@ function spawnAIDinos() {
         aiGroup.position.set(ax, 0, az);
         scene.add(aiGroup);
 
+        // UI Etiketleri
         const labelEl = document.createElement('div');
         labelEl.className = 'ai-label';
         document.body.appendChild(labelEl);
+
+        // Radar Ok Göstergesi
+        const indicatorEl = document.createElement('div');
+        indicatorEl.className = 'radar-indicator';
+        document.body.appendChild(indicatorEl);
 
         aiDinos.push({
             mesh: aiGroup,
             scale: scale,
             tail: dinoData.tail,
             label: labelEl,
+            indicator: indicatorEl,
             angle: Math.random() * Math.PI * 2,
-            speed: 0.07,
-            changeDirTimer: Math.random() * 100
+            speed: 0.06,
+            walkTime: 0
         });
     }
 }
 
-// --- EKRANDA UYARI GÖSTER (HAREKETİ ENGELLEMEZ) ---
+// --- EKRANDA UYARI MESAJI ---
 function showSizeWarning(requiredSize) {
     warningMsgEl.innerText = `${requiredSize.toFixed(2)}m Olmalısın!`;
     warningMsgEl.style.display = 'block';
 
     if (warningTimeout) clearTimeout(warningTimeout);
-    
     warningTimeout = setTimeout(() => {
         warningMsgEl.style.display = 'none';
     }, 1000);
 }
 
-// --- KONTROLLER ---
+// --- KONTROL AYARLARI ---
 function setupControls() {
     window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
     window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
@@ -404,7 +382,6 @@ function setupControls() {
         }
 
         joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
-        
         joystickVector.x = dx / maxLimit;
         joystickVector.y = dy / maxLimit;
         joystickActive = true;
@@ -425,7 +402,7 @@ function setupControls() {
     window.addEventListener('mouseup', resetJoystick);
 }
 
-// --- ANA DÖNGÜ GÜNCELLEMELERİ (UPDATE) ---
+// --- OYUNCU HAREKET METOTLARI ---
 function updatePlayer() {
     let moveX = 0;
     let moveZ = 0;
@@ -444,7 +421,8 @@ function updatePlayer() {
         const targetAngle = Math.atan2(moveX, moveZ);
         player.rotation.y = targetAngle;
 
-        const speedMult = moveSpeed * (1 + (playerScale - 1) * 0.05);
+        // Büyüme hızına bağlı olarak hızı çok minik dengeliyoruz
+        const speedMult = moveSpeed * (1 + (playerScale - 1) * 0.03);
         const power = joystickActive ? Math.sqrt(moveX*moveX + moveZ*moveZ) : 1.0;
         
         const nextX = player.position.x + Math.sin(targetAngle) * speedMult * power;
@@ -462,7 +440,7 @@ function updatePlayer() {
                 if (dist < collisionRadius) {
                     const requiredSize = b.userData.height * 0.35;
                     if (playerScale > requiredSize) {
-                        eatBuilding(b);
+                        eatBuilding(b, true);
                     } else {
                         canGo = false;
                         showSizeWarning(requiredSize);
@@ -482,40 +460,70 @@ function updatePlayer() {
     }
 }
 
+// --- ARABALAR VE BOTLARIN HAREKETLERİ ---
 function updateCarsAndBots() {
+    // Arabalar sadece dikey ve yatay yolları takip eder
     for (let car of cars) {
-        car.position.x += car.userData.speed * car.userData.dirX;
-        if (Math.abs(car.position.x) > MAP_SIZE - 2) car.userData.dirX *= -1;
+        const moveStep = car.userData.speed * car.userData.dir;
+        
+        if (car.userData.isDikey) {
+            car.position.z += moveStep;
+            if (Math.abs(car.position.z) > MAP_SIZE - 2) {
+                car.userData.dir *= -1; // Yol sonuna geldiğinde geri döner
+                car.rotation.y = car.userData.dir > 0 ? 0 : Math.PI;
+            }
+        } else {
+            car.position.x += moveStep;
+            if (Math.abs(car.position.x) > MAP_SIZE - 2) {
+                car.userData.dir *= -1;
+                car.rotation.y = car.userData.dir > 0 ? Math.PI/2 : -Math.PI/2;
+            }
+        }
 
+        // Oyuncu arabayı yerse
         if (player.position.distanceTo(car.position) < (playerScale * 0.8) + 0.5) {
             scene.remove(car);
             cars.splice(cars.indexOf(car), 1);
-            growPlayer(0.08);
+            growPlayer(0.04); // Büyüme hızı yavaşlatıldı (Eski: 0.08)
             respawnCar();
         }
     }
 
+    // Yayaları hareket ettir ve ye
     for (let bot of bots) {
         bot.position.x += Math.sin(bot.userData.angle) * bot.userData.speed;
         bot.position.z += Math.cos(bot.userData.angle) * bot.userData.speed;
 
-        if (Math.abs(bot.position.x) > MAP_SIZE - 2) bot.userData.angle += Math.PI;
+        if (Math.abs(bot.position.x) > MAP_SIZE - 2 || isPointOnRoad(bot.position.x, bot.position.z, 0.5)) {
+            bot.userData.angle += Math.PI; // Yola girmemeye çalışırlar
+        }
 
         if (player.position.distanceTo(bot.position) < (playerScale * 0.8) + 0.2) {
             scene.remove(bot);
             bots.splice(bots.indexOf(bot), 1);
-            growPlayer(0.04);
+            growPlayer(0.02); // Büyüme hızı yavaşlatıldı (Eski: 0.04)
             respawnBot();
         }
     }
 }
 
+// --- AKILLI VE BÜYÜYEN RAKİP DİNOZORLAR (AI DINOS) ---
 function updateAIDinos() {
     for (let ai of aiDinos) {
-        ai.changeDirTimer--;
-        if (ai.changeDirTimer <= 0) {
+        ai.walkTime++;
+
+        // HEDEFLEME MEKANİZMASI (Canavara odaklanma veya kaçış)
+        const distToPlayer = ai.mesh.position.distanceTo(player.position);
+        
+        if (ai.scale > playerScale) {
+            // AI bizden büyükse direkt BİZE ODAKLANSIN (Kovalar)
+            ai.angle = Math.atan2(player.position.x - ai.mesh.position.x, player.position.z - ai.mesh.position.z);
+        } else if (ai.scale < playerScale && distToPlayer < 18) {
+            // Senden küçükse ve yakınındaysa ters yöne KAÇSIN
+            ai.angle = Math.atan2(ai.mesh.position.x - player.position.x, ai.mesh.position.z - player.position.z);
+        } else if (ai.walkTime % 100 === 0) {
+            // Uzaktaysa rastgele etrafta dolansın ve bişeyleri yesin
             ai.angle = Math.random() * Math.PI * 2;
-            ai.changeDirTimer = 80 + Math.random() * 120;
         }
 
         const nextX = ai.mesh.position.x + Math.sin(ai.angle) * ai.speed;
@@ -529,9 +537,35 @@ function updateAIDinos() {
             ai.angle += Math.PI;
         }
 
+        // --- YAPAY ZEKANIN ÇEVREYİ YEMESİ VE %15 DAHA HIZLI BÜYÜMESİ ---
+        // AI bina yiyor mu?
+        for (let b of buildings) {
+            if (b.userData.isEaten) continue;
+            const dist = ai.mesh.position.distanceTo(b.position);
+            const req = b.userData.height * 0.35;
+            
+            if (dist < (b.userData.width/2) + (ai.scale*0.5) && ai.scale > req) {
+                eatBuilding(b, false);
+                ai.scale += (b.userData.height * 0.035) * 1.15; // AI %15 daha hızlı büyür
+                ai.mesh.scale.set(ai.scale, ai.scale, ai.scale);
+            }
+        }
+
+        // AI arabaları yiyor mu?
+        for (let car of cars) {
+            if (ai.mesh.position.distanceTo(car.position) < (ai.scale * 0.8) + 0.5) {
+                scene.remove(car);
+                cars.splice(cars.indexOf(car), 1);
+                ai.scale += 0.046; // Büyüme katsayısı (%15 dahil)
+                ai.mesh.scale.set(ai.scale, ai.scale, ai.scale);
+                respawnCar();
+            }
+        }
+
+        // Animasyon
         if (ai.tail) ai.tail.rotation.y = Math.sin(Date.now() * 0.01) * 0.35;
 
-        // AI etiketlerinin ekrandaki yerini ayarla
+        // --- 2D ETİKET GÜNCELLEMELERİ ---
         const tempV = new THREE.Vector3(ai.mesh.position.x, ai.mesh.position.y + (ai.scale * 1.5), ai.mesh.position.z);
         tempV.project(camera);
         const x = (tempV.x * .5 + .5) * window.innerWidth;
@@ -541,14 +575,47 @@ function updateAIDinos() {
         ai.label.style.top = `${y}px`;
         ai.label.innerText = `Dino: ${ai.scale.toFixed(2)}m`;
 
-        // Dinozor Savaş Mekaniği
-        const distToPlayer = player.position.distanceTo(ai.mesh.position);
+        // --- YÖN VE RADAR OKLARI SİSTEMİ (KURU KAFA DETAYLI) ---
+        const isOffscreen = (x < 0 || x > window.innerWidth || y < 0 || y > window.innerHeight);
+        
+        if (isOffscreen) {
+            ai.indicator.style.display = 'flex';
+            
+            // Ok açısı hesaplama
+            const screenCenterX = window.innerWidth / 2;
+            const screenCenterY = window.innerHeight / 2;
+            const angle = Math.atan2(y - screenCenterY, x - screenCenterX);
+            
+            // Kenar sınırlarına yerleştirme
+            const radius = Math.min(screenCenterX, screenCenterY) - 50;
+            const indX = screenCenterX + Math.cos(angle) * radius;
+            const indY = screenCenterY + Math.sin(angle) * radius;
+            
+            ai.indicator.style.left = `${indX}px`;
+            ai.indicator.style.top = `${indY}px`;
+            
+            // Büyükse Kuru Kafa, Küçükse Yeşil Ok
+            if (ai.scale > playerScale) {
+                ai.indicator.innerHTML = '☠️'; // Kuru Kafa
+                ai.indicator.style.color = '#ef4444';
+                ai.indicator.style.transform = `rotate(0deg)`; // Kuru kafa düz dursun
+            } else {
+                ai.indicator.innerHTML = '▲'; // Yön Oku
+                ai.indicator.style.color = '#22c55e';
+                ai.indicator.style.transform = `rotate(${angle * 180 / Math.PI + 90}deg)`;
+            }
+        } else {
+            ai.indicator.style.display = 'none'; // Ekran içindeyse oku gizle
+        }
+
+        // --- SAVAŞ MEKANİĞİ ---
         if (distToPlayer < (playerScale * 0.7) + (ai.scale * 0.7)) {
             if (playerScale > ai.scale) {
                 scene.remove(ai.mesh);
                 ai.label.remove();
+                ai.indicator.remove();
                 aiDinos.splice(aiDinos.indexOf(ai), 1);
-                growPlayer(ai.scale * 0.35);
+                growPlayer(ai.scale * 0.15); // AI yendiğimizde makul büyüme
             } else {
                 alert("Senden daha büyük bir dinozor seni yedi! Yeniden başlıyor...");
                 location.reload();
@@ -557,23 +624,30 @@ function updateAIDinos() {
     }
 }
 
-// --- YEME VE BÜYÜME ---
-function eatBuilding(building) {
+// --- YEME MEKANİZMASI VE BİNALARIN 2 KAT YAVAŞ DOĞMASI ---
+function eatBuilding(building, isPlayer) {
     building.userData.isEaten = true;
     
     let scaleVal = 1.0;
-    let shrink = setInterval(() => {
+    const shrink = setInterval(() => {
         scaleVal -= 0.15;
         if (scaleVal <= 0.05) {
             clearInterval(shrink);
             scene.remove(building);
-            respawnBuilding(building);
+            
+            // Binaların Yeniden Çıkması 2 Kat Daha Yavaş (Eski: 2-3 saniye, Yeni: 6 saniye gecikmeli)
+            setTimeout(() => {
+                respawnBuilding(building);
+            }, 6000); 
+
         } else {
             building.scale.set(scaleVal, scaleVal, scaleVal);
         }
     }, 25);
 
-    growPlayer(building.userData.height * 0.06);
+    if (isPlayer) {
+        growPlayer(building.userData.height * 0.03); // Oyuncunun bina yeme hızı yarı yarıya düşürüldü (Eski: 0.06)
+    }
 }
 
 function growPlayer(amount) {
@@ -593,7 +667,7 @@ function respawnBuilding(oldBuilding) {
     do {
         x = (Math.random() - 0.5) * (MAP_SIZE * 1.7);
         z = (Math.random() - 0.5) * (MAP_SIZE * 1.7);
-    } while (Math.sqrt(x*x + z*z) < 15);
+    } while (Math.sqrt(x*x + z*z) < 15 || isPointOnRoad(x, z, (w / 2) + 1.5));
 
     const bGroup = createDetailedBuilding(w, h, 0x4a5568);
     bGroup.position.set(x, h/2, z);
@@ -605,17 +679,42 @@ function respawnBuilding(oldBuilding) {
 
 function respawnCar() {
     const car = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.6, 0.7), new THREE.MeshStandardMaterial({ color: 0xd69e2e }));
-    car.position.set((Math.random() - 0.5) * (MAP_SIZE * 1.6), 0.3, (Math.random() - 0.5) * (MAP_SIZE * 1.6));
+    const randomRoadPos = ROAD_COORDS[Math.floor(Math.random() * ROAD_COORDS.length)];
+    const isDikey = Math.random() > 0.5;
+
+    car.position.y = 0.3;
     car.castShadow = true;
-    car.userData = { speed: 0.05 + Math.random()*0.05, dirX: 1, dirZ: 1 };
+    
+    car.userData = {
+        speed: 0.04 + Math.random() * 0.03,
+        isDikey: isDikey,
+        roadPos: randomRoadPos,
+        dir: 1
+    };
+
+    if (isDikey) {
+        car.position.x = randomRoadPos;
+        car.position.z = (Math.random() - 0.5) * (MAP_SIZE * 1.6);
+    } else {
+        car.position.x = (Math.random() - 0.5) * (MAP_SIZE * 1.6);
+        car.position.z = randomRoadPos;
+        car.rotation.y = Math.PI / 2;
+    }
+
     scene.add(car);
     cars.push(car);
 }
 
 function respawnBot() {
     const bot = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x3182ce }));
-    bot.position.set((Math.random() - 0.5) * (MAP_SIZE * 1.8), 0.25, (Math.random() - 0.5) * (MAP_SIZE * 1.8));
-    bot.userData = { angle: Math.random() * Math.PI * 2, speed: 0.03 };
+    let bx, bz;
+    do {
+        bx = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
+        bz = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
+    } while (Math.sqrt(bx*bx + bz*bz) < 12 || isPointOnRoad(bx, bz, 1.0));
+
+    bot.position.set(bx, 0.25, bz);
+    bot.userData = { angle: Math.random() * Math.PI * 2, speed: 0.025 };
     scene.add(bot);
     bots.push(bot);
 }
