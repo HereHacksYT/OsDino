@@ -19,10 +19,13 @@ let buildings = [];
 let bots = [];
 let cars = [];
 let aiDinos = [];
-const MAP_SIZE = 50; // Toplam 100x100 harita sınırları
+let borderMeshes = []; // Sınırları kolayca güncellemek için diziye aldık
+
+let MAP_SIZE = 50; // Başlangıç harita yarıçapı (100x100 toplam alan)
+let currentPhase = 1; // 1: <10m, 2: 10m-100m, 3: >=100m
 
 const ROAD_COORDS = [];
-for (let pos = -MAP_SIZE + 15; pos < MAP_SIZE; pos += 25) {
+for (let pos = -1000; pos < 1000; pos += 25) { // Yol koordinat havuzunu genişlettik
     ROAD_COORDS.push(pos);
 }
 
@@ -38,7 +41,7 @@ function init() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x556677);
 
-    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 50000); // Görüş mesafesini devasa haritalar için arttırdık
 
     renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -57,8 +60,8 @@ function init() {
     sunLight.shadow.mapSize.height = 2048;
     scene.add(sunLight);
 
-    // ZEMİN
-    const floorGeo = new THREE.PlaneGeometry(MAP_SIZE * 2, MAP_SIZE * 2);
+    // ZEMİN (En büyük evreye de yetecek kadar devasa bir zemin)
+    const floorGeo = new THREE.PlaneGeometry(20000, 20000);
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x2d3748, roughness: 0.95 });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
@@ -71,55 +74,71 @@ function init() {
 
     // Varlıkları Oluştur
     createOsDino();       
-    spawnCityAssets();   
+    spawnCityAssets(40, 15, 45); // İlk faz sayıları
     spawnAIDinos();      
     setupControls();
 
     animate();
 }
 
-// --- HARİTA SINIR BARİYERLERİ ---
+// --- HARİTA SINIR BARİYERLERİ (Dinamik Güncellenebilir) ---
 function createMapBorders() {
+    // Varsa eski sınırları sahneden sil
+    for (let b of borderMeshes) {
+        scene.remove(b);
+    }
+    borderMeshes = [];
+
     const borderMat = new THREE.MeshStandardMaterial({ color: 0xe53e3e, roughness: 0.5 });
-    const borderGeoH = new THREE.BoxGeometry(MAP_SIZE * 2, 2, 0.5);
-    const borderGeoV = new THREE.BoxGeometry(0.5, 2, MAP_SIZE * 2);
+    // Bariyerlerin yüksekliğini ve kalınlığını oyuncunun boyuna göre ölçeklendiriyoruz
+    const barrierHeight = Math.max(2, playerScale * 5);
+    const barrierThickness = Math.max(0.5, playerScale);
+
+    const borderGeoH = new THREE.BoxGeometry(MAP_SIZE * 2, barrierHeight, barrierThickness);
+    const borderGeoV = new THREE.BoxGeometry(barrierThickness, barrierHeight, MAP_SIZE * 2);
 
     const north = new THREE.Mesh(borderGeoH, borderMat);
-    north.position.set(0, 1, MAP_SIZE);
+    north.position.set(0, barrierHeight / 2, MAP_SIZE);
     
     const south = new THREE.Mesh(borderGeoH, borderMat);
-    south.position.set(0, 1, -MAP_SIZE);
+    south.position.set(0, barrierHeight / 2, -MAP_SIZE);
 
     const east = new THREE.Mesh(borderGeoV, borderMat);
-    east.position.set(MAP_SIZE, 1, 0);
+    east.position.set(MAP_SIZE, barrierHeight / 2, 0);
 
     const west = new THREE.Mesh(borderGeoV, borderMat);
-    west.position.set(-MAP_SIZE, 1, 0);
+    west.position.set(-MAP_SIZE, barrierHeight / 2, 0);
 
     scene.add(north, south, east, west);
+    borderMeshes.push(north, south, east, west);
 }
 
 function createCityGrid() {
     const roadMat = new THREE.MeshStandardMaterial({ color: 0x1a202c, roughness: 0.9 });
+    // Sadece aktif harita sınırları içindeki yolları çizelim
     for (let pos of ROAD_COORDS) {
-        const roadH = new THREE.Mesh(new THREE.PlaneGeometry(MAP_SIZE * 2, 4), roadMat);
-        roadH.rotation.x = -Math.PI/2;
-        roadH.position.set(0, 0.01, pos);
-        roadH.receiveShadow = true;
-        scene.add(roadH);
+        if (Math.abs(pos) < MAP_SIZE) {
+            const roadH = new THREE.Mesh(new THREE.PlaneGeometry(MAP_SIZE * 2, 4), roadMat);
+            roadH.rotation.x = -Math.PI/2;
+            roadH.position.set(0, 0.01, pos);
+            roadH.receiveShadow = true;
+            scene.add(roadH);
 
-        const roadV = new THREE.Mesh(new THREE.PlaneGeometry(4, MAP_SIZE * 2), roadMat);
-        roadV.rotation.x = -Math.PI/2;
-        roadV.position.set(pos, 0.01, 0);
-        roadV.receiveShadow = true;
-        scene.add(roadV);
+            const roadV = new THREE.Mesh(new THREE.PlaneGeometry(4, MAP_SIZE * 2), roadMat);
+            roadV.rotation.x = -Math.PI/2;
+            roadV.position.set(pos, 0.01, 0);
+            roadV.receiveShadow = true;
+            scene.add(roadV);
+        }
     }
 }
 
 function isPointOnRoad(x, z, tolerance = 3.5) {
     for (let pos of ROAD_COORDS) {
-        if (Math.abs(x - pos) < tolerance || Math.abs(z - pos) < tolerance) {
-            return true;
+        if (Math.abs(pos) < MAP_SIZE) {
+            if (Math.abs(x - pos) < tolerance || Math.abs(z - pos) < tolerance) {
+                return true;
+            }
         }
     }
     return false;
@@ -219,18 +238,22 @@ function createOsDino() {
     scene.add(player);
 }
 
-function spawnCityAssets() {
+// Parametrik Spawn Sistemi (Evrimlerde nesneleri arttırmak için)
+function spawnCityAssets(buildingCount, carCount, botCount) {
     const buildingColors = [0x718096, 0x4a5568, 0x2d3748, 0x805ad5, 0x319795, 0xdd6b20];
 
-    for (let i = 0; i < 40; i++) {
-        const h = Math.random() * 8 + 4;
-        const w = Math.random() * 1.5 + 2.5;
+    // Binalar
+    for (let i = 0; i < buildingCount; i++) {
+        // Bina boyutlarını oyuncu boyutuna göre dinamik ölçeklendiriyoruz ki sonraki evrelerde dev binalar olsun
+        const sizeMult = currentPhase; 
+        const h = (Math.random() * 8 + 4) * sizeMult;
+        const w = (Math.random() * 1.5 + 2.5) * sizeMult;
 
         let x, z;
         do {
-            x = (Math.random() - 0.5) * (MAP_SIZE * 1.7);
-            z = (Math.random() - 0.5) * (MAP_SIZE * 1.7);
-        } while (Math.sqrt(x*x + z*z) < 15 || isPointOnRoad(x, z, (w / 2) + 1.5));
+            x = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
+            z = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
+        } while (Math.sqrt(x*x + z*z) < (15 * sizeMult) || isPointOnRoad(x, z, (w / 2) + 1.5));
 
         const bColor = buildingColors[Math.floor(Math.random() * buildingColors.length)];
         const bGroup = createDetailedBuilding(w, h, bColor);
@@ -241,16 +264,25 @@ function spawnCityAssets() {
         buildings.push(bGroup);
     }
 
+    // Arabalar
     const carMat = new THREE.MeshStandardMaterial({ color: 0xd69e2e, roughness: 0.4 });
-    for (let i = 0; i < 15; i++) {
-        const car = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.6, 0.7), carMat);
-        const randomRoadPos = ROAD_COORDS[Math.floor(Math.random() * ROAD_COORDS.length)];
+    for (let i = 0; i < carCount; i++) {
+        const carSizeMult = Math.max(1, currentPhase * 0.7);
+        const car = new THREE.Mesh(new THREE.BoxGeometry(1.2 * carSizeMult, 0.6 * carSizeMult, 0.7 * carSizeMult), carMat);
+        
+        let randomRoadPos = 0;
+        if (ROAD_COORDS.length > 0) {
+            // Sadece aktif sınırlar içindeki yolları seç
+            const validRoads = ROAD_COORDS.filter(p => Math.abs(p) < MAP_SIZE);
+            randomRoadPos = validRoads[Math.floor(Math.random() * validRoads.length)] || 0;
+        }
+
         const isDikey = Math.random() > 0.5;
 
-        car.position.y = 0.3;
+        car.position.y = 0.3 * carSizeMult;
         car.castShadow = true;
         car.userData = {
-            speed: 0.04 + Math.random() * 0.03,
+            speed: (0.04 + Math.random() * 0.03) * carSizeMult,
             isDikey: isDikey,
             roadPos: randomRoadPos,
             dir: Math.random() > 0.5 ? 1 : -1
@@ -269,24 +301,26 @@ function spawnCityAssets() {
         cars.push(car);
     }
 
+    // İnsanlar
     const botMat = new THREE.MeshStandardMaterial({ color: 0x3182ce });
-    for (let i = 0; i < 45; i++) {
-        const bot = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.5, 8), botMat);
+    for (let i = 0; i < botCount; i++) {
+        const botSizeMult = Math.max(1, currentPhase * 0.7);
+        const bot = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * botSizeMult, 0.15 * botSizeMult, 0.5 * botSizeMult, 8), botMat);
         let bx, bz;
         do {
             bx = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
             bz = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
-        } while (Math.sqrt(bx*bx + bz*bz) < 12 || isPointOnRoad(bx, bz, 1.0));
+        } while (Math.sqrt(bx*bx + bz*bz) < (12 * botSizeMult) || isPointOnRoad(bx, bz, 1.0));
 
-        bot.position.set(bx, 0.25, bz);
+        bot.position.set(bx, 0.25 * botSizeMult, bz);
         bot.castShadow = true;
-        bot.userData = { angle: Math.random() * Math.PI * 2, speed: 0.025 };
+        bot.userData = { angle: Math.random() * Math.PI * 2, speed: 0.025 * botSizeMult };
         scene.add(bot);
         bots.push(bot);
     }
 }
 
-// --- RAKİP DİNOZOR OLUŞTURMA YARDIMCISI ---
+// --- RAKİP DİNOZOR OLUŞTURMA ---
 function createSingleAIDino(colorHex, customScale = null) {
     const scale = customScale !== null ? customScale : (0.8 + Math.random() * 0.6);
     const dinoData = buildDinoMesh(colorHex);
@@ -294,7 +328,7 @@ function createSingleAIDino(colorHex, customScale = null) {
     const aiGroup = dinoData.group;
     aiGroup.scale.set(scale, scale, scale);
     
-    // Oyuncudan uzakta doğma garantisi (En az 25 metre uzakta)
+    // Oyuncudan en az 25 metre uzakta doğma garantisi
     let ax, az, distToPlayer;
     do {
         ax = (Math.random() - 0.5) * (MAP_SIZE * 1.5);
@@ -321,10 +355,10 @@ function createSingleAIDino(colorHex, customScale = null) {
         label: labelEl,
         indicator: indicatorEl,
         angle: Math.random() * Math.PI * 2,
-        speed: 0.05,
+        speed: 0.05 * Math.max(1, currentPhase * 0.7), // Evreye göre hızlanırlar
         walkTime: 0,
-        pendingSuperGrow: false, // Uzaklaşınca aktif olacak %20 büyüme durumu
-        lastGrowCheckTime: Date.now() // Sinsi büyüme zamanlayıcısı (10 sn)
+        pendingSuperGrow: false, 
+        lastGrowCheckTime: Date.now() 
     };
 }
 
@@ -333,6 +367,39 @@ function spawnAIDinos() {
         const d = createSingleAIDino(AI_COLORS[i]);
         aiDinos.push(d);
     }
+}
+
+// --- HARİTA EVRİM VE BÜYÜME SİSTEMİ (10m ve 100m) ---
+function checkMapEvolution() {
+    if (playerScale >= 10.0 && currentPhase === 1) {
+        currentPhase = 2;
+        MAP_SIZE = 500; // Harita 1000x1000 oldu!
+        triggerEvolutionUI("EVRİM I: 1000x1000 DÜNYA!");
+    } else if (playerScale >= 100.0 && currentPhase === 2) {
+        currentPhase = 3;
+        MAP_SIZE = 5000; // Harita 10000x10000 oldu!
+        triggerEvolutionUI("EVRİM II: DEVASEŞTİN! 10000x10000!");
+    }
+}
+
+function triggerEvolutionUI(message) {
+    // Sınır bariyerlerini yeni boyutlara taşı
+    createMapBorders();
+    createCityGrid();
+
+    // 10 KAT DAHA FAZLA nesne doğur (Mevcut nesneleri silmeden ek üzerine ekler)
+    spawnCityAssets(300, 100, 300);
+
+    // Ekranda havalı bildirim
+    warningMsgEl.innerText = message;
+    warningMsgEl.style.color = '#22c55e';
+    warningMsgEl.style.display = 'block';
+    
+    if (warningTimeout) clearTimeout(warningTimeout);
+    warningTimeout = setTimeout(() => {
+        warningMsgEl.style.display = 'none';
+        warningMsgEl.style.color = '#f43f5e'; // Eski rengine geri çek
+    }, 3000);
 }
 
 function showSizeWarning(requiredSize) {
@@ -414,7 +481,7 @@ function updatePlayer() {
         const targetAngle = Math.atan2(moveX, moveZ);
         player.rotation.y = targetAngle;
 
-        const speedMult = moveSpeed * (1 + (playerScale - 1) * 0.02);
+        const speedMult = moveSpeed * (1 + (playerScale - 1) * 0.015);
         const power = joystickActive ? Math.sqrt(moveX*moveX + moveZ*moveZ) : 1.0;
         
         const nextX = player.position.x + Math.sin(targetAngle) * speedMult * power;
@@ -495,7 +562,7 @@ function updateCarsAndBots() {
     }
 }
 
-// --- GÜNCEL YAPAY ZEKA SİSTEMİ (SİNSİ BÜYÜME VE PUSU MEKANİĞİ) ---
+// --- GÜNCEL YAPAY ZEKA SİSTEMİ (ADİL BİNA KURALI + SİNSİ BÜYÜME) ---
 function updateAIDinos() {
     const now = Date.now();
 
@@ -506,18 +573,18 @@ function updateAIDinos() {
 
         // --- 1. SİNSİ BÜYÜME ZAMANLAYICISI (10 saniyede bir tetiklenir) ---
         if (now - ai.lastGrowCheckTime >= 10000) {
-            ai.pendingSuperGrow = true; // %20 büyüme hakkı kazandı (pusu)
+            ai.pendingSuperGrow = true; // %20 büyüme hakkı kazandı
             ai.lastGrowCheckTime = now;
         }
 
         // Büyüme bekliyorsa ve oyuncudan uzaktaysa (30 metreden fazlaysa) BÜYÜ!
         if (ai.pendingSuperGrow && distToPlayer >= 30) {
-            ai.scale = playerScale * 1.20; // Bizden tam %20 büyük olur
+            ai.scale = playerScale * 1.20; // Sinsi bir şekilde oyuncudan %20 büyük olur
             ai.mesh.scale.set(ai.scale, ai.scale, ai.scale);
             ai.pendingSuperGrow = false; // Büyüme hakkı tüketildi
         }
 
-        // --- 2. AKILLI HEDEFLEME & KOVALAMA MENZİLİ (20 Metreden kovalama) ---
+        // --- 2. 20 METREDEN KOVALAMA MENZİLİ ---
         let targetPos = null;
 
         if (distToPlayer <= 20) {
@@ -531,7 +598,7 @@ function updateAIDinos() {
             }
         } else {
             // Mesafe 20 metrenin dışındaysa en yakın yemeğe yönelip büyümeye çalışır!
-            let nearestDist = 25; 
+            let nearestDist = 50 * currentPhase; // Evrelere göre arama menzilini arttır
 
             // Yakındaki Binalar
             for (let b of buildings) {
@@ -583,16 +650,14 @@ function updateAIDinos() {
             ai.angle += Math.PI;
         }
 
-        // --- 3. DOĞAL BÜYÜME (Çevreyi Yiyerek Büyüme - %30 Ekstra Hızlı) ---
+        // --- 3. DOĞAL BÜYÜME VE ADALET KURALI (Binalardan büyüme ALMAZLAR) ---
         for (let b of buildings) {
             if (b.userData.isEaten) continue;
             const dist = ai.mesh.position.distanceTo(b.position);
             const req = b.userData.height * 0.35;
             
             if (dist < (b.userData.width/2) + (ai.scale*0.5) && ai.scale > req) {
-                eatBuilding(b, false);
-                ai.scale += (b.userData.height * 0.012) * 1.30; 
-                ai.mesh.scale.set(ai.scale, ai.scale, ai.scale);
+                eatBuilding(b, false); // Sadece binayı yok eder, büyüme kazanmaz! (Gelişim hızı adil kılındı)
             }
         }
 
@@ -600,7 +665,7 @@ function updateAIDinos() {
             if (ai.mesh.position.distanceTo(car.position) < (ai.scale * 0.8) + 0.5) {
                 scene.remove(car);
                 cars.splice(cars.indexOf(car), 1);
-                ai.scale += 0.015 * 1.30; 
+                ai.scale += (0.015 * 1.30); // Arabalardan %30 ekstra hızlı büyümeye devam
                 ai.mesh.scale.set(ai.scale, ai.scale, ai.scale);
                 respawnCar();
             }
@@ -610,7 +675,7 @@ function updateAIDinos() {
             if (ai.mesh.position.distanceTo(bot.position) < (ai.scale * 0.8) + 0.2) {
                 scene.remove(bot);
                 bots.splice(bots.indexOf(bot), 1);
-                ai.scale += 0.008 * 1.30; 
+                ai.scale += (0.008 * 1.30); // İnsanlardan %30 ekstra hızlı büyümeye devam
                 ai.mesh.scale.set(ai.scale, ai.scale, ai.scale);
                 respawnBot();
             }
@@ -618,7 +683,7 @@ function updateAIDinos() {
 
         if (ai.tail) ai.tail.rotation.y = Math.sin(Date.now() * 0.01) * 0.35;
 
-        // --- 4. ARAYÜZ ETİKETLERİ ---
+        // --- 4. ARAYÜZ ETİKETLERİ VE RADAR OKLARI ---
         const tempV = new THREE.Vector3(ai.mesh.position.x, ai.mesh.position.y + (ai.scale * 1.5), ai.mesh.position.z);
         tempV.project(camera);
         const x = (tempV.x * .5 + .5) * window.innerWidth;
@@ -661,7 +726,6 @@ function updateAIDinos() {
             if (playerScale > ai.scale) {
                 const savedColor = ai.colorHex;
 
-                // Sahneden ve ekran arayüzünden kaldır
                 scene.remove(ai.mesh);
                 ai.label.remove();
                 ai.indicator.remove();
@@ -669,9 +733,9 @@ function updateAIDinos() {
 
                 growPlayer(ai.scale * 0.1); 
 
-                // Ölen dinozor için sinsi 10 saniye respawn sayacı başlar
+                // Ölen dinozor 10 saniye sonra oyuncudan en az 25m uzakta yeniden doğar!
                 setTimeout(() => {
-                    const respawnedDino = createSingleAIDino(savedColor, playerScale * 0.85); // Oyuncuya yakın boyutta sinsi canlanır
+                    const respawnedDino = createSingleAIDino(savedColor, playerScale * 0.85); 
                     aiDinos.push(respawnedDino);
                 }, 10000);
 
@@ -704,7 +768,7 @@ function eatBuilding(building, isPlayer) {
     }, 25);
 
     if (isPlayer) {
-        growPlayer(building.userData.height * 0.007); // Oyuncunun binalardan büyüme katsayısı daha da yavaşlatıldı (Eski: 0.012)
+        growPlayer(building.userData.height * 0.007); 
     }
 }
 
@@ -712,20 +776,24 @@ function growPlayer(amount) {
     playerScale += amount;
     player.scale.set(playerScale, playerScale, playerScale);
     sizeValEl.innerText = playerScale.toFixed(2);
+    
+    // Her büyümede evrim sınırlarını kontrol et
+    checkMapEvolution();
 }
 
 function respawnBuilding(oldBuilding) {
     const index = buildings.indexOf(oldBuilding);
     if (index > -1) buildings.splice(index, 1);
 
-    const h = Math.random() * 8 + 4;
-    const w = Math.random() * 1.5 + 2.5;
+    const sizeMult = currentPhase;
+    const h = (Math.random() * 8 + 4) * sizeMult;
+    const w = (Math.random() * 1.5 + 2.5) * sizeMult;
     
     let x, z;
     do {
         x = (Math.random() - 0.5) * (MAP_SIZE * 1.7);
         z = (Math.random() - 0.5) * (MAP_SIZE * 1.7);
-    } while (Math.sqrt(x*x + z*z) < 15 || isPointOnRoad(x, z, (w / 2) + 1.5));
+    } while (Math.sqrt(x*x + z*z) < (15 * sizeMult) || isPointOnRoad(x, z, (w / 2) + 1.5));
 
     const bGroup = createDetailedBuilding(w, h, 0x4a5568);
     bGroup.position.set(x, h/2, z);
@@ -736,15 +804,22 @@ function respawnBuilding(oldBuilding) {
 }
 
 function respawnCar() {
-    const car = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.6, 0.7), new THREE.MeshStandardMaterial({ color: 0xd69e2e }));
-    const randomRoadPos = ROAD_COORDS[Math.floor(Math.random() * ROAD_COORDS.length)];
+    const carSizeMult = Math.max(1, currentPhase * 0.7);
+    const car = new THREE.Mesh(new THREE.BoxGeometry(1.2 * carSizeMult, 0.6 * carSizeMult, 0.7 * carSizeMult), new THREE.MeshStandardMaterial({ color: 0xd69e2e }));
+    
+    let randomRoadPos = 0;
+    if (ROAD_COORDS.length > 0) {
+        const validRoads = ROAD_COORDS.filter(p => Math.abs(p) < MAP_SIZE);
+        randomRoadPos = validRoads[Math.floor(Math.random() * validRoads.length)] || 0;
+    }
+
     const isDikey = Math.random() > 0.5;
 
-    car.position.y = 0.3;
+    car.position.y = 0.3 * carSizeMult;
     car.castShadow = true;
     
     car.userData = {
-        speed: 0.04 + Math.random() * 0.03,
+        speed: (0.04 + Math.random() * 0.03) * carSizeMult,
         isDikey: isDikey,
         roadPos: randomRoadPos,
         dir: 1
@@ -764,15 +839,16 @@ function respawnCar() {
 }
 
 function respawnBot() {
-    const bot = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x3182ce }));
+    const botSizeMult = Math.max(1, currentPhase * 0.7);
+    const bot = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * botSizeMult, 0.15 * botSizeMult, 0.5 * botSizeMult, 8), new THREE.MeshStandardMaterial({ color: 0x3182ce }));
     let bx, bz;
     do {
         bx = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
         bz = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
-    } while (Math.sqrt(bx*bx + bz*bz) < 12 || isPointOnRoad(bx, bz, 1.0));
+    } while (Math.sqrt(bx*bx + bz*bz) < (12 * botSizeMult) || isPointOnRoad(bx, bz, 1.0));
 
-    bot.position.set(bx, 0.25, bz);
-    bot.userData = { angle: Math.random() * Math.PI * 2, speed: 0.025 };
+    bot.position.set(bx, 0.25 * botSizeMult, bz);
+    bot.userData = { angle: Math.random() * Math.PI * 2, speed: 0.025 * botSizeMult };
     scene.add(bot);
     bots.push(bot);
 }
@@ -796,9 +872,9 @@ function animate() {
     updateCarsAndBots();
     updateAIDinos();
 
-    // Kamera Takip Sınırlandırması
-    const targetCamY = player.position.y + 7.5 + (playerScale * 3.5);
-    const targetCamZ = player.position.z - 11.5 - (playerScale * 4.5);
+    // Kamera Takip Sınırlandırması (Kamerayı evre büyüdükçe çok daha geriye çekiyoruz)
+    const targetCamY = player.position.y + 7.5 + (playerScale * 4.5);
+    const targetCamZ = player.position.z - 11.5 - (playerScale * 5.5);
 
     camera.position.x = THREE.MathUtils.lerp(camera.position.x, player.position.x, 0.08);
     camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCamY, 0.08);
