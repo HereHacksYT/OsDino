@@ -2,8 +2,8 @@
 let scene, camera, renderer;
 let player, playerScale = 1.0;
 let playerModel;
-let playerMixer; // Animasyon mixer
-let playerAnimations; // Animasyon klipleri
+let playerMixer;
+let playerAnimations;
 const baseMoveSpeed = 0.132;
 
 let gameStarted = false;
@@ -50,12 +50,12 @@ let lastTimerUpdate = Date.now();
 
 let gltfLoader;
 let cachedGLBModel = null;
-let cachedAnimations = null; // Animasyonları cache'le
+let cachedAnimations = null;
 
-const DINO_SCALE = 1/250;
-const BOT_SCALE = 1/250; // Botlar da 250 kat küçült
+const DINO_SCALE = 1/250; // 250 kat küçültme
+const BOT_SCALE = 1/250;   // Botlar da aynı ölçekte
 
-let clock = new THREE.Clock(); // Animasyon için clock
+let clock = new THREE.Clock();
 
 function init() {
     scene = new THREE.Scene();
@@ -107,16 +107,20 @@ function loadDinoModel() {
         (gltf) => {
             playerModel = gltf.scene;
             
-            // Animasyonları al
+            // Animasyonları al ve ilk animasyonu loop olarak oynat
             if (gltf.animations && gltf.animations.length > 0) {
                 cachedAnimations = gltf.animations;
                 playerMixer = new THREE.AnimationMixer(playerModel);
                 
-                // İlk animasyonu oynat (idle/walk)
-                const action = playerMixer.clipAction(gltf.animations[0]);
+                // Yürüme animasyonunu bulmaya çalış, yoksa ilkini loop yap
+                let walkAnim = gltf.animations.find(a => a.name.toLowerCase().includes('walk'));
+                if (!walkAnim) walkAnim = gltf.animations[0];
+                
+                const action = playerMixer.clipAction(walkAnim);
+                action.setLoop(THREE.LoopRepeat);
                 action.play();
                 
-                console.log('Animasyonlar yüklendi:', gltf.animations.length + ' adet');
+                console.log('Animasyonlar yüklendi:', gltf.animations.length + ' adet, oynatılan:', walkAnim.name);
             } else {
                 console.log('Modelde animasyon bulunamadı');
             }
@@ -539,11 +543,10 @@ function spawnCityAssets(buildingCount, carCount, botCount) {
         cars.push(car);
     }
 
-    // BOTLAR DA 250 KAT KÜÇÜLTÜLDÜ
     const botMat = new THREE.MeshStandardMaterial({ color: 0x2563eb });
     for (let i = 0; i < botCount; i++) {
         const bot = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.7, 8), botMat);
-        bot.scale.set(BOT_SCALE, BOT_SCALE, BOT_SCALE); // 250 kat küçült
+        bot.scale.set(BOT_SCALE, BOT_SCALE, BOT_SCALE);
         let bx, bz;
         do {
             bx = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
@@ -575,10 +578,13 @@ function createSingleAIDino(colorHex, initialScale = null) {
     if (cachedGLBModel) {
         aiGroup = cachedGLBModel.clone();
         
-        // Animasyonları klonla
         if (cachedAnimations && cachedAnimations.length > 0) {
             aiMixer = new THREE.AnimationMixer(aiGroup);
-            const action = aiMixer.clipAction(cachedAnimations[0]);
+            // Yürüme animasyonunu bul, yoksa ilkini loop yap
+            let walkAnim = cachedAnimations.find(a => a.name.toLowerCase().includes('walk'));
+            if (!walkAnim) walkAnim = cachedAnimations[0];
+            const action = aiMixer.clipAction(walkAnim);
+            action.setLoop(THREE.LoopRepeat);
             action.play();
         }
         
@@ -608,11 +614,13 @@ function createSingleAIDino(colorHex, initialScale = null) {
         aiGroup = dinoData.group;
     }
     
+    // Daha yakın ve harita içinde doğmalarını sağla
     let ax, az;
     do {
-        ax = (Math.random() - 0.5) * (MAP_SIZE * 1.5);
-        az = (Math.random() - 0.5) * (MAP_SIZE * 1.5);
-    } while (Math.sqrt(Math.pow(ax, 2) + Math.pow(az, 2)) < 15);
+        ax = (Math.random() - 0.5) * (MAP_SIZE * 1.2); // önceki 1.5'ti, 1.2 daha içeride
+        az = (Math.random() - 0.5) * (MAP_SIZE * 1.2);
+    } while (Math.sqrt(Math.pow(ax, 2) + Math.pow(az, 2)) < 2 || Math.sqrt(Math.pow(ax, 2) + Math.pow(az, 2)) > MAP_SIZE - 5);
+    // En az 2 birim uzakta, en fazla MAP_SIZE-5 birim uzakta (içeride)
 
     aiGroup.position.set(ax, 0, az);
     scene.add(aiGroup); 
@@ -882,7 +890,6 @@ function updateAIDinos() {
     
     const delta = clock.getDelta();
     
-    // AI mixer'ları güncelle
     for (let ai of aiDinos) {
         if (ai.mixer) {
             ai.mixer.update(delta);
@@ -997,7 +1004,7 @@ function respawnCar() {
 
 function respawnBot() {
     const bot = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.7, 8), new THREE.MeshStandardMaterial({ color: 0x2563eb }));
-    bot.scale.set(BOT_SCALE, BOT_SCALE, BOT_SCALE); // Botlar da 250 kat küçült
+    bot.scale.set(BOT_SCALE, BOT_SCALE, BOT_SCALE);
     let bx, bz;
     do {
         bx = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
@@ -1047,7 +1054,6 @@ function animate() {
     
     const delta = clock.getDelta();
     
-    // Oyuncu animasyon mixer'ını güncelle
     if (playerMixer) {
         playerMixer.update(delta);
     }
