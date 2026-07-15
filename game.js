@@ -2,6 +2,8 @@
 let scene, camera, renderer;
 let player, playerScale = 1.0;
 let playerModel;
+let playerMixer; // Animasyon mixer
+let playerAnimations; // Animasyon klipleri
 const baseMoveSpeed = 0.132;
 
 let gameStarted = false;
@@ -29,7 +31,6 @@ for (let pos = -100; pos < 100; pos += 20) {
     ROAD_COORDS.push(pos);
 }
 
-// UI Elemanları
 const sizeValEl = document.getElementById('size-val');
 const tierValEl = document.getElementById('tier-val');
 const warningMsgEl = document.getElementById('warning-msg');
@@ -49,11 +50,13 @@ let lastTimerUpdate = Date.now();
 
 let gltfLoader;
 let cachedGLBModel = null;
+let cachedAnimations = null; // Animasyonları cache'le
 
-// DİNOZOR KÜÇÜLTME SABİTİ
-const DINO_SCALE = 1/250; // 250 kat küçült
+const DINO_SCALE = 1/250;
+const BOT_SCALE = 1/250; // Botlar da 250 kat küçült
 
-// --- BAŞLANGIÇ (INIT) ---
+let clock = new THREE.Clock(); // Animasyon için clock
+
 function init() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0a0f1d); 
@@ -74,7 +77,6 @@ function init() {
     sunLight.castShadow = true;
     scene.add(sunLight);
 
-    // ZEMİN
     const floorGeo = new THREE.PlaneGeometry(300, 300);
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.9 });
     const floor = new THREE.Mesh(floorGeo, floorMat);
@@ -105,6 +107,20 @@ function loadDinoModel() {
         (gltf) => {
             playerModel = gltf.scene;
             
+            // Animasyonları al
+            if (gltf.animations && gltf.animations.length > 0) {
+                cachedAnimations = gltf.animations;
+                playerMixer = new THREE.AnimationMixer(playerModel);
+                
+                // İlk animasyonu oynat (idle/walk)
+                const action = playerMixer.clipAction(gltf.animations[0]);
+                action.play();
+                
+                console.log('Animasyonlar yüklendi:', gltf.animations.length + ' adet');
+            } else {
+                console.log('Modelde animasyon bulunamadı');
+            }
+            
             updateLoadingProgress(100, "Model yüklendi!");
             
             playerModel.traverse((node) => {
@@ -114,7 +130,6 @@ function loadDinoModel() {
                 }
             });
             
-            // GLB modelini 250 kat küçült
             playerModel.scale.set(DINO_SCALE, DINO_SCALE, DINO_SCALE);
             
             cachedGLBModel = playerModel.clone();
@@ -524,9 +539,11 @@ function spawnCityAssets(buildingCount, carCount, botCount) {
         cars.push(car);
     }
 
+    // BOTLAR DA 250 KAT KÜÇÜLTÜLDÜ
     const botMat = new THREE.MeshStandardMaterial({ color: 0x2563eb });
     for (let i = 0; i < botCount; i++) {
         const bot = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.7, 8), botMat);
+        bot.scale.set(BOT_SCALE, BOT_SCALE, BOT_SCALE); // 250 kat küçült
         let bx, bz;
         do {
             bx = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
@@ -553,9 +570,18 @@ function createSingleAIDino(colorHex, initialScale = null) {
     
     let aiGroup;
     let dinoData;
+    let aiMixer;
     
     if (cachedGLBModel) {
         aiGroup = cachedGLBModel.clone();
+        
+        // Animasyonları klonla
+        if (cachedAnimations && cachedAnimations.length > 0) {
+            aiMixer = new THREE.AnimationMixer(aiGroup);
+            const action = aiMixer.clipAction(cachedAnimations[0]);
+            action.play();
+        }
+        
         aiGroup.traverse((node) => {
             if (node.isMesh) {
                 node.material = node.material.clone();
@@ -601,6 +627,7 @@ function createSingleAIDino(colorHex, initialScale = null) {
 
     const aiObj = {
         mesh: aiGroup,
+        mixer: aiMixer,
         scale: scale, 
         colorHex: colorHex,
         tail: dinoData.tail,
@@ -637,7 +664,6 @@ function getEatRange() {
 function updatePlayerPhysicalSize() {
     if (!player) return;
     const visScale = calculateVisualScale(playerScale);
-    // Dinozorun temel scale'i DINO_SCALE, onun üstüne visual scale ekle
     player.scale.set(visScale * DINO_SCALE, visScale * DINO_SCALE, visScale * DINO_SCALE);
 
     let tierText = "🦎 Yavru";
@@ -854,6 +880,15 @@ function updateCarsAndBots() {
 function updateAIDinos() {
     if (!gameStarted) return;
     
+    const delta = clock.getDelta();
+    
+    // AI mixer'ları güncelle
+    for (let ai of aiDinos) {
+        if (ai.mixer) {
+            ai.mixer.update(delta);
+        }
+    }
+    
     for (let ai of aiDinos) {
         const distToPlayer = player ? ai.mesh.position.distanceTo(player.position) : 500;
 
@@ -962,6 +997,7 @@ function respawnCar() {
 
 function respawnBot() {
     const bot = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.7, 8), new THREE.MeshStandardMaterial({ color: 0x2563eb }));
+    bot.scale.set(BOT_SCALE, BOT_SCALE, BOT_SCALE); // Botlar da 250 kat küçült
     let bx, bz;
     do {
         bx = (Math.random() - 0.5) * (MAP_SIZE * 1.8);
@@ -1009,6 +1045,13 @@ function onWindowResize() {
 function animate() {
     requestAnimationFrame(animate);
     
+    const delta = clock.getDelta();
+    
+    // Oyuncu animasyon mixer'ını güncelle
+    if (playerMixer) {
+        playerMixer.update(delta);
+    }
+    
     if (!gameStarted) {
         const time = Date.now() * 0.0005;
         camera.position.x = Math.sin(time) * 15;
@@ -1024,7 +1067,6 @@ function animate() {
         updateAIDinos();
 
         const visScale = calculateVisualScale(playerScale);
-        // Normal kamera mesafesi
         const targetCamY = player.position.y + (3.8 * visScale);
         const targetCamZ = player.position.z - (5.8 * visScale);
 
