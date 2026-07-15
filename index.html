@@ -5,13 +5,96 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>OsDino</title>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background-color: #090d16;
+        * {
+            box-sizing: border-box;
             user-select: none;
             -webkit-user-select: none;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #090d16;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Yükleme Ekranı */
+        #loading-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(30,41,59,0.98) 0%, rgba(9,13,22,1) 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10001;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            transition: opacity 0.5s ease;
+        }
+
+        #loading-title {
+            font-size: 48px;
+            font-weight: 900;
+            color: #22c55e;
+            margin-bottom: 10px;
+            letter-spacing: 3px;
+            text-shadow: 0 4px 15px rgba(34, 197, 94, 0.4);
+        }
+
+        #loading-subtitle {
+            font-size: 14px;
+            color: #94a3b8;
+            margin-bottom: 30px;
+        }
+
+        #loading-bar-container {
+            width: 300px;
+            height: 24px;
+            background: #1f2937;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid #22c55e;
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.2);
+        }
+
+        #loading-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #22c55e, #16a34a, #22c55e);
+            background-size: 200% 100%;
+            animation: loadingShine 1.5s infinite;
+            border-radius: 12px;
+            transition: width 0.3s ease;
+        }
+
+        @keyframes loadingShine {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        #loading-text {
+            color: #9ca3af;
+            margin-top: 15px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        #loading-percent {
+            color: #22c55e;
+            font-weight: bold;
         }
 
         /* Başlangıç Ekranı */
@@ -21,65 +104,106 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(9, 13, 22, 0.98);
+            background: radial-gradient(circle, rgba(30,41,59,0.98) 0%, rgba(15,23,42,1) 100%);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             z-index: 10000;
-            font-family: sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             color: white;
+        }
+
+        #start-title {
+            font-size: 58px;
+            font-weight: 900;
+            color: #22c55e;
+            margin: 0 0 5px 0;
+            letter-spacing: 4px;
+            text-shadow: 0 4px 15px rgba(34, 197, 94, 0.4);
+        }
+
+        #start-sub {
+            font-size: 16px;
+            color: #94a3b8;
+            margin-bottom: 30px;
+            font-style: italic;
         }
 
         #play-btn {
             background-color: #22c55e;
-            color: white;
+            color: #ffffff;
             border: none;
-            padding: 15px 50px;
-            font-size: 26px;
-            font-weight: bold;
-            border-radius: 12px;
+            padding: 16px 50px;
+            font-size: 22px;
+            font-weight: 800;
+            border-radius: 50px;
             cursor: pointer;
-            box-shadow: 0 4px 15px rgba(34, 197, 94, 0.4);
-            transition: transform 0.2s;
+            box-shadow: 0 6px 25px rgba(34, 197, 94, 0.5);
+            transition: transform 0.2s, background-color 0.2s, opacity 0.5s;
+            outline: none;
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        #play-btn:hover {
+            background-color: #16a34a;
+            transform: scale(1.05);
         }
 
         #play-btn:active {
             transform: scale(0.95);
         }
 
+        #play-btn.ready {
+            opacity: 1;
+            pointer-events: auto;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 6px 25px rgba(34, 197, 94, 0.5); }
+            50% { box-shadow: 0 6px 40px rgba(34, 197, 94, 0.8); }
+        }
+
         /* Oyun İçi Arayüz */
         #ui {
             position: absolute;
-            top: 20px;
-            left: 20px;
-            font-family: sans-serif;
+            top: 15px;
+            left: 15px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             color: white;
-            background: rgba(0, 0, 0, 0.85);
-            padding: 15px 25px;
-            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.9);
+            padding: 10px 18px;
+            border-radius: 10px;
             pointer-events: none;
             z-index: 100;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.15);
+            backdrop-filter: blur(10px);
         }
 
         #size-display {
-            font-size: 22px;
+            font-size: 18px;
             font-weight: bold;
+            color: #ffffff;
+        }
+
+        #size-val {
             color: #22c55e;
+            font-weight: 900;
         }
 
         #tier-display {
-            font-size: 14px;
+            font-size: 12px;
             color: #3b82f6;
-            margin-top: 3px;
+            margin-top: 2px;
             font-weight: bold;
         }
 
         #timer-display {
-            font-size: 13px;
+            font-size: 11px;
             color: #f43f5e;
-            margin-top: 5px;
+            margin-top: 3px;
             font-weight: bold;
         }
 
@@ -88,25 +212,28 @@
             top: 30%;
             left: 50%;
             transform: translate(-50%, -50%);
-            font-family: sans-serif;
-            font-size: 30px;
-            font-weight: bold;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 24px;
+            font-weight: 900;
             color: #f43f5e;
-            text-shadow: 2px 2px 5px rgba(0,0,0,0.9);
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.9);
             display: none;
             z-index: 1000;
             pointer-events: none;
             text-align: center;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 8px;
         }
 
-        /* Sanal Joystick (Tablet ve Telefonlar İçin) */
+        /* Sanal Joystick */
         #joystick-container {
             position: absolute;
             bottom: 40px;
             left: 40px;
-            width: 120px;
-            height: 120px;
-            background: rgba(255, 255, 255, 0.15);
+            width: 110px;
+            height: 110px;
+            background: rgba(15, 23, 42, 0.5);
             border: 2px solid rgba(255, 255, 255, 0.3);
             border-radius: 50%;
             display: flex;
@@ -114,14 +241,16 @@
             align-items: center;
             z-index: 1000;
             touch-action: none;
+            backdrop-filter: blur(5px);
         }
 
         #joystick-knob {
-            width: 50px;
-            height: 50px;
-            background: rgba(255, 255, 255, 0.7);
+            width: 45px;
+            height: 45px;
+            background: rgba(255, 255, 255, 0.8);
             border-radius: 50%;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            position: absolute;
         }
 
         /* Yapay Zeka İsim Etiketleri */
@@ -129,67 +258,172 @@
             position: absolute;
             transform: translate(-50%, -100%);
             color: white;
-            font-family: sans-serif;
-            font-size: 12px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 11px;
             font-weight: bold;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 3px 7px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 2px 7px;
             border-radius: 4px;
             pointer-events: none;
             z-index: 10;
             white-space: nowrap;
+            border: 1px solid rgba(255,255,255,0.2);
         }
 
         /* Ekran Dışı Radar Göstergeleri */
         .radar-indicator {
             position: absolute;
-            width: 38px;
-            height: 38px;
+            width: 40px;
+            height: 40px;
             background: rgba(0,0,0,0.8);
             border-radius: 50%;
             display: none;
             justify-content: center;
             align-items: center;
-            font-family: sans-serif;
-            font-size: 14px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 16px;
             font-weight: bold;
             z-index: 99;
             pointer-events: none;
             border: 1px solid rgba(255,255,255,0.2);
+            margin-left: -20px;
+            margin-top: -20px;
+        }
+
+        /* Admin Butonu */
+        #admin-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background-color: rgba(234, 179, 8, 0.9);
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            font-weight: bold;
+            font-size: 13px;
+            border-radius: 8px;
+            cursor: pointer;
+            z-index: 1000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            backdrop-filter: blur(10px);
+        }
+
+        #admin-controls {
+            position: absolute;
+            top: 60px;
+            right: 15px;
+            background: rgba(0,0,0,0.95);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            z-index: 1000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            border: 2px solid #eab308;
+        }
+
+        #admin-controls h4 {
+            margin: 0 0 10px 0;
+            color: #eab308;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        #admin-controls div {
+            display: flex;
+            gap: 5px;
+        }
+
+        #admin-size-input {
+            width: 80px;
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #4a5568;
+            background: #2d3748;
+            color: white;
+            font-weight: bold;
+        }
+
+        #admin-apply-btn {
+            background: #22c55e;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            #start-title {
+                font-size: 36px;
+            }
+            #loading-title {
+                font-size: 32px;
+            }
+            #loading-bar-container {
+                width: 250px;
+            }
+            #ui {
+                padding: 8px 14px;
+            }
+            #size-display {
+                font-size: 15px;
+            }
         }
     </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
+    <!-- YÜKLEME EKRANI -->
+    <div id="loading-screen">
+        <div id="loading-title">OsDino</div>
+        <div id="loading-subtitle">Dinozor modeli yükleniyor...</div>
+        <div id="loading-bar-container">
+            <div id="loading-bar"></div>
+        </div>
+        <div id="loading-text">
+            <span id="loading-percent">%0</span> - Hazırlanıyor...
+        </div>
+    </div>
+
+    <!-- BAŞLANGIÇ EKRANI -->
     <div id="start-screen">
-        <h1 style="font-size: 58px; margin-bottom: 5px; text-shadow: 0 4px 12px rgba(0,0,0,0.7); color: #22c55e; font-family: sans-serif; letter-spacing: 2px;">OsDino</h1>
-        <p style="color: #9ca3af; margin-bottom: 30px; font-size: 18px; font-family: sans-serif; font-style: italic;">Her 10 Metrede Yeniden Küçül, Binaları Yok Et!</p>
+        <h1 id="start-title">OsDino</h1>
+        <p id="start-sub">Her 10 Metrede Yeniden Küçül, Binaları Yok Et!</p>
         <button id="play-btn">OYUNA BAŞLA</button>
     </div>
 
+    <!-- OYUN İÇİ UI -->
     <div id="ui">
-        <div id="size-display">Boyut: <span id="size-val">1.00</span>m</div>
-        <div id="tier-display">Kademe: <span id="tier-val">Normal Dino</span></div>
-        <div id="timer-display">Evrime Kalan Süre: <span id="timer-val">20</span>s</div>
+        <div id="size-display"><span id="size-val">1.0</span>m</div>
+        <div id="tier-display"><span id="tier-val">🦎 Yavru</span></div>
+        <div id="timer-display">⏱ <span id="timer-val">20</span>s</div>
     </div>
 
+    <!-- UYARI MESAJI -->
     <div id="warning-msg">Boyutun Yetersiz!</div>
 
+    <!-- JOYSTICK -->
     <div id="joystick-container">
         <div id="joystick-knob"></div>
     </div>
 
-    <button id="admin-btn" style="position: absolute; top: 20px; right: 20px; background-color: #eab308; color: white; border: none; padding: 12px 20px; font-weight: bold; border-radius: 8px; cursor: pointer; z-index: 1000; font-family: sans-serif;">Admin Panel</button>
-
-    <div id="admin-controls" style="display: none; position: absolute; top: 80px; right: 20px; background: rgba(0,0,0,0.95); color: white; padding: 15px; border-radius: 8px; z-index: 1000; font-family: sans-serif; border: 2px solid #eab308;">
-        <h4 style="margin: 0 0 10px 0; color: #eab308; text-align: center;">Dino Kontrol</h4>
-        <div style="display: flex; gap: 5px;">
-            <input type="number" id="admin-size-input" value="1" step="5" style="width: 80px; padding: 8px; border-radius: 4px; border: 1px solid #4a5568; background: #2d3748; color: white; font-weight: bold;">
-            <button id="admin-apply-btn" style="background: #22c55e; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold;">Uygula</button>
+    <!-- ADMIN PANEL -->
+    <button id="admin-btn">🔧 Admin</button>
+    <div id="admin-controls" style="display: none;">
+        <h4>⚡ Dino Kontrol</h4>
+        <div>
+            <input type="number" id="admin-size-input" value="1" step="5">
+            <button id="admin-apply-btn">Uygula</button>
         </div>
     </div>
 
+    <!-- Three.js ve GLTFLoader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    
+    <!-- Oyun Kodu -->
     <script src="game.js"></script>
 </body>
 </html>
