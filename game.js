@@ -22,13 +22,14 @@ let aiDinos = [];
 let borderMeshes = []; 
 let roadMeshes = [];
 
-const MAP_SIZE = 1200;
+const MAP_SIZE = 60; 
 
 const ROAD_COORDS = [];
-for (let pos = -2000; pos < 2000; pos += 400) {
+for (let pos = -100; pos < 100; pos += 20) {
     ROAD_COORDS.push(pos);
 }
 
+// UI Elemanları
 const sizeValEl = document.getElementById('size-val');
 const tierValEl = document.getElementById('tier-val');
 const warningMsgEl = document.getElementById('warning-msg');
@@ -49,11 +50,15 @@ let lastTimerUpdate = Date.now();
 let gltfLoader;
 let cachedGLBModel = null;
 
+// DİNOZOR KÜÇÜLTME SABİTİ
+const DINO_SCALE = 1/250; // 250 kat küçült
+
+// --- BAŞLANGIÇ (INIT) ---
 function init() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0a0f1d); 
 
-    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.05, 50000);
+    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.05, 5000); 
 
     renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -69,7 +74,8 @@ function init() {
     sunLight.castShadow = true;
     scene.add(sunLight);
 
-    const floorGeo = new THREE.PlaneGeometry(6000, 6000);
+    // ZEMİN
+    const floorGeo = new THREE.PlaneGeometry(300, 300);
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.9 });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
@@ -107,6 +113,9 @@ function loadDinoModel() {
                     node.receiveShadow = true;
                 }
             });
+            
+            // GLB modelini 250 kat küçült
+            playerModel.scale.set(DINO_SCALE, DINO_SCALE, DINO_SCALE);
             
             cachedGLBModel = playerModel.clone();
             
@@ -225,14 +234,14 @@ function createCityGrid() {
     
     for (let pos of ROAD_COORDS) {
         if (Math.abs(pos) < MAP_SIZE) {
-            const roadH = new THREE.Mesh(new THREE.PlaneGeometry(MAP_SIZE * 2, 90), roadMat);
+            const roadH = new THREE.Mesh(new THREE.PlaneGeometry(MAP_SIZE * 2, 4.5), roadMat);
             roadH.rotation.x = -Math.PI/2;
             roadH.position.set(0, 0.02, pos); 
             roadH.receiveShadow = true;
             scene.add(roadH);
             roadMeshes.push(roadH);
 
-            const roadV = new THREE.Mesh(new THREE.PlaneGeometry(90, MAP_SIZE * 2), roadMat);
+            const roadV = new THREE.Mesh(new THREE.PlaneGeometry(4.5, MAP_SIZE * 2), roadMat);
             roadV.rotation.x = -Math.PI/2;
             roadV.position.set(pos, 0.02, 0);
             roadV.receiveShadow = true;
@@ -242,7 +251,7 @@ function createCityGrid() {
     }
 }
 
-function isPointOnRoad(x, z, tolerance = 70) {
+function isPointOnRoad(x, z, tolerance = 3.5) {
     for (let pos of ROAD_COORDS) {
         if (Math.abs(pos) < MAP_SIZE) {
             if (Math.abs(x - pos) < tolerance || Math.abs(z - pos) < tolerance) return true;
@@ -628,7 +637,8 @@ function getEatRange() {
 function updatePlayerPhysicalSize() {
     if (!player) return;
     const visScale = calculateVisualScale(playerScale);
-    player.scale.set(visScale, visScale, visScale);
+    // Dinozorun temel scale'i DINO_SCALE, onun üstüne visual scale ekle
+    player.scale.set(visScale * DINO_SCALE, visScale * DINO_SCALE, visScale * DINO_SCALE);
 
     let tierText = "🦎 Yavru";
     if (playerScale >= 100000) tierText = "🐉 Titan";
@@ -642,7 +652,8 @@ function updatePlayerPhysicalSize() {
 
 function updateAIDinoPhysicalSize(ai) {
     const visScale = calculateVisualScale(ai.scale);
-    ai.mesh.scale.set(visScale, visScale, visScale);
+    const baseScale = cachedGLBModel ? DINO_SCALE : 1;
+    ai.mesh.scale.set(visScale * baseScale, visScale * baseScale, visScale * baseScale);
 }
 
 function getBuildingRequiredSize(buildingHeight) {
@@ -1000,9 +1011,9 @@ function animate() {
     
     if (!gameStarted) {
         const time = Date.now() * 0.0005;
-        camera.position.x = Math.sin(time) * 300;
-        camera.position.z = Math.cos(time) * 300;
-        camera.position.y = 160;
+        camera.position.x = Math.sin(time) * 15;
+        camera.position.z = Math.cos(time) * 15;
+        camera.position.y = 8;
         camera.lookAt(0, 0, 0);
     }
 
@@ -1013,14 +1024,14 @@ function animate() {
         updateAIDinos();
 
         const visScale = calculateVisualScale(playerScale);
-        // KAMERA 100 KAT UZAK
-        const targetCamY = player.position.y + (380 * visScale);
-        const targetCamZ = player.position.z - (580 * visScale);
+        // Normal kamera mesafesi
+        const targetCamY = player.position.y + (3.8 * visScale);
+        const targetCamZ = player.position.z - (5.8 * visScale);
 
         camera.position.x = THREE.MathUtils.lerp(camera.position.x, player.position.x, 0.08);
         camera.position.y = THREE.MathUtils.lerp(camera.position.y, targetCamY, 0.08);
         camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetCamZ, 0.08);
-        camera.lookAt(player.position.x, player.position.y + (50 * visScale), player.position.z);
+        camera.lookAt(player.position.x, player.position.y + (0.5 * visScale), player.position.z);
     }
 
     renderer.render(scene, camera);
