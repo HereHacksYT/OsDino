@@ -21,6 +21,63 @@ canvas {
     height: 100%;
 }
 
+/* Giriş / Play Ekranı Tasarımı */
+#start-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle, rgba(30,41,59,0.98) 0%, rgba(15,23,42,1) 100%);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+}
+
+#start-content {
+    text-align: center;
+    padding: 20px;
+}
+
+#start-title {
+    font-size: 54px;
+    font-weight: 900;
+    color: #22c55e;
+    margin: 0 0 10px 0;
+    letter-spacing: 4px;
+    text-shadow: 0 4px 12px rgba(34, 197, 94, 0.3);
+}
+
+#start-sub {
+    font-size: 16px;
+    color: #94a3b8;
+    margin-bottom: 30px;
+}
+
+#play-btn {
+    background-color: #22c55e;
+    color: #ffffff;
+    border: none;
+    padding: 16px 45px;
+    font-size: 22px;
+    font-weight: 800;
+    border-radius: 50px;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4);
+    transition: transform 0.2s, background-color 0.2s;
+    outline: none;
+}
+
+#play-btn:hover {
+    background-color: #16a34a;
+    transform: scale(1.05);
+}
+
+#play-btn:active {
+    transform: scale(0.95);
+}
+
 /* Temiz ve Sade Arayüz */
 #ui {
     position: absolute;
@@ -58,7 +115,7 @@ canvas {
     margin-left: 2px;
 }
 
-/* Ekranın Ortasındaki Uyarı Mesajı */
+/* Ortadaki Uyarı */
 #warning-msg {
     position: absolute;
     top: 30%;
@@ -74,7 +131,7 @@ canvas {
     display: none;
 }
 
-/* Sade Mobil Joystick */
+/* Mobil Joystick */
 #joystick-container {
     position: absolute;
     bottom: 50px;
@@ -100,7 +157,6 @@ canvas {
     box-shadow: 0 4px 8px rgba(0,0,0,0.4);
 }
 
-/* AI Dinozorların Üzerindeki Metre Etiketleri */
 .ai-label {
     position: absolute;
     color: white;
@@ -115,7 +171,7 @@ canvas {
     border: 1px solid rgba(255,255,255,0.2);
 }
 
-/* RADAR YÖN OKLARI (YENİ) */
+/* Radar Okları */
 .radar-indicator {
     position: absolute;
     top: 50%;
