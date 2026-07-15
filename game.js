@@ -3,7 +3,6 @@ let scene, camera, renderer;
 let player, playerScale = 1.0;
 let playerModel;
 let playerMixer;
-let playerAnimations;
 const baseMoveSpeed = 0.132;
 
 let gameStarted = false;
@@ -52,8 +51,8 @@ let gltfLoader;
 let cachedGLBModel = null;
 let cachedAnimations = null;
 
-const DINO_SCALE = 1/250; // 250 kat küçültme
-const BOT_SCALE = 1/250;   // Botlar da aynı ölçekte
+const DINO_SCALE = 1/250;
+const BOT_SCALE = 1/250;
 
 let clock = new THREE.Clock();
 
@@ -107,26 +106,24 @@ function loadDinoModel() {
         (gltf) => {
             playerModel = gltf.scene;
             
-            // Animasyonları al ve ilk animasyonu loop olarak oynat
+            // Animasyonları cache'le
             if (gltf.animations && gltf.animations.length > 0) {
                 cachedAnimations = gltf.animations;
                 playerMixer = new THREE.AnimationMixer(playerModel);
                 
-                // Yürüme animasyonunu bulmaya çalış, yoksa ilkini loop yap
-                let walkAnim = gltf.animations.find(a => a.name.toLowerCase().includes('walk'));
-                if (!walkAnim) walkAnim = gltf.animations[0];
+                let walkAnim = cachedAnimations.find(a => a.name.toLowerCase().includes('walk'));
+                if (!walkAnim) walkAnim = cachedAnimations[0];
                 
                 const action = playerMixer.clipAction(walkAnim);
                 action.setLoop(THREE.LoopRepeat);
                 action.play();
                 
-                console.log('Animasyonlar yüklendi:', gltf.animations.length + ' adet, oynatılan:', walkAnim.name);
-            } else {
-                console.log('Modelde animasyon bulunamadı');
+                console.log('✅ Animasyonlar yüklendi:', cachedAnimations.length + ' adet');
             }
             
             updateLoadingProgress(100, "Model yüklendi!");
             
+            // Gölgeleri aktif et
             playerModel.traverse((node) => {
                 if (node.isMesh) {
                     node.castShadow = true;
@@ -134,9 +131,12 @@ function loadDinoModel() {
                 }
             });
             
+            // ÖNCE scale'i ayarla, SONRA clone'la
             playerModel.scale.set(DINO_SCALE, DINO_SCALE, DINO_SCALE);
             
+            // Modeli cache'le (AI'ler için)
             cachedGLBModel = playerModel.clone();
+            console.log('✅ GLB model cache\'lendi, AI\'ler bunu kullanacak');
             
             player = playerModel;
             player.position.set(0, 0, 0);
@@ -156,7 +156,10 @@ function loadDinoModel() {
             });
             
             updatePlayerPhysicalSize();
+            
+            // AI'leri SPAWNLA (cachedGLBModel hazır olduktan sonra)
             spawnAIDinos();
+            console.log('✅ AI dinozorlar oluşturuldu, toplam:', aiDinos.length);
             
             setTimeout(() => {
                 gameLoaded = true;
@@ -178,7 +181,7 @@ function loadDinoModel() {
             }
         },
         (error) => {
-            console.warn('GLB yüklenemedi, yedek model kullanılıyor:', error);
+            console.warn('❌ GLB yüklenemedi, yedek model kullanılıyor:', error);
             updateLoadingProgress(100, "Yedek model oluşturuluyor...");
             createBackupDino();
         }
@@ -186,6 +189,7 @@ function loadDinoModel() {
 }
 
 function createBackupDino() {
+    console.log('⚠️ Yedek dinozor modeli oluşturuluyor...');
     const dino = buildDinoMesh(0x22c55e);
     player = dino.group;
     tailMesh = dino.tail;
@@ -562,10 +566,16 @@ function spawnCityAssets(buildingCount, carCount, botCount) {
 }
 
 function spawnAIDinos() {
+    console.log('🦖 AI dinozorlar oluşturuluyor... cachedGLBModel:', cachedGLBModel ? 'VAR ✅' : 'YOK ❌');
+    
     for (let i = 0; i < 5; i++) {
         const d = createSingleAIDino(AI_COLORS[i]);
-        aiDinos.push(d);
+        if (d) {
+            aiDinos.push(d);
+            console.log(`  AI Dino ${i+1}: renk=${AI_COLORS[i].toString(16)}, GLB model=${cachedGLBModel ? 'evet' : 'hayır (yedek)'}`);
+        }
     }
+    console.log('✅ Toplam AI dinozor:', aiDinos.length);
 }
 
 function createSingleAIDino(colorHex, initialScale = null) {
@@ -575,12 +585,13 @@ function createSingleAIDino(colorHex, initialScale = null) {
     let dinoData;
     let aiMixer;
     
+    // cachedGLBModel varsa onu kullan
     if (cachedGLBModel) {
         aiGroup = cachedGLBModel.clone();
         
+        // Animasyonları klonla
         if (cachedAnimations && cachedAnimations.length > 0) {
             aiMixer = new THREE.AnimationMixer(aiGroup);
-            // Yürüme animasyonunu bul, yoksa ilkini loop yap
             let walkAnim = cachedAnimations.find(a => a.name.toLowerCase().includes('walk'));
             if (!walkAnim) walkAnim = cachedAnimations[0];
             const action = aiMixer.clipAction(walkAnim);
@@ -588,14 +599,20 @@ function createSingleAIDino(colorHex, initialScale = null) {
             action.play();
         }
         
+        // Renk değiştir
         aiGroup.traverse((node) => {
             if (node.isMesh) {
                 node.material = node.material.clone();
-                if (node.material.color && node.material.color.getHex() === 0x22c55e) {
-                    node.material.color.setHex(colorHex);
+                // Yeşil rengi (0x22c55e) hedef renkle değiştir
+                if (node.material.color) {
+                    const currentHex = node.material.color.getHex();
+                    if (currentHex === 0x22c55e || currentHex === 0x22c55e) {
+                        node.material.color.setHex(colorHex);
+                    }
                 }
             }
         });
+        
         dinoData = { tail: null, leftArm: null, rightArm: null, leftLeg: null, rightLeg: null };
         aiGroup.traverse((node) => {
             const name = node.name.toLowerCase();
@@ -610,17 +627,16 @@ function createSingleAIDino(colorHex, initialScale = null) {
             }
         });
     } else {
+        // Yedek model
         dinoData = buildDinoMesh(colorHex);
         aiGroup = dinoData.group;
     }
     
-    // Daha yakın ve harita içinde doğmalarını sağla
-    let ax, az;
-    do {
-        ax = (Math.random() - 0.5) * (MAP_SIZE * 1.2); // önceki 1.5'ti, 1.2 daha içeride
-        az = (Math.random() - 0.5) * (MAP_SIZE * 1.2);
-    } while (Math.sqrt(Math.pow(ax, 2) + Math.pow(az, 2)) < 2 || Math.sqrt(Math.pow(ax, 2) + Math.pow(az, 2)) > MAP_SIZE - 5);
-    // En az 2 birim uzakta, en fazla MAP_SIZE-5 birim uzakta (içeride)
+    // Harita içinde rastgele pozisyon
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 10 + Math.random() * 25; // 10-35 birim uzakta (harita içinde)
+    const ax = Math.cos(angle) * distance;
+    const az = Math.sin(angle) * distance;
 
     aiGroup.position.set(ax, 0, az);
     scene.add(aiGroup); 
@@ -703,7 +719,7 @@ function getBuildingRequiredSize(buildingHeight) {
 function growPlayer(amount) {
     const oldScale = playerScale;
     playerScale += amount;
-    if (sizeValEl) sizeValEl.innerText = playerScale.toFixed(1) + "m";
+    if (sizeValEl) sizeValEl.innerText = playerScale.toFixed(2) + "m"; // Küsuratlı göster
     
     if (oldScale < 10 && playerScale >= 10) triggerEvolutionUI("🦖 BÜYÜK DİNOZOR!");
     else if (oldScale < 100 && playerScale >= 100) triggerEvolutionUI("🐊 ALFA YIRTICI!");
@@ -745,7 +761,7 @@ function setupAdminPanel() {
             const newSize = parseFloat(adminSizeInput.value);
             if (!isNaN(newSize) && newSize > 0) {
                 playerScale = newSize;
-                if (sizeValEl) sizeValEl.innerText = playerScale.toFixed(1) + "m";
+                if (sizeValEl) sizeValEl.innerText = playerScale.toFixed(2) + "m";
                 updatePlayerPhysicalSize();
             }
         });
@@ -926,7 +942,7 @@ function updateAIDinos() {
 
         ai.label.style.left = `${x}px`;
         ai.label.style.top = `${y}px`;
-        ai.label.innerText = `${ai.scale.toFixed(0)}m`;
+        ai.label.innerText = `${ai.scale.toFixed(1)}m`; // Küsuratlı göster
 
         const isOffscreen = (x < 0 || x > window.innerWidth || y < 0 || y > window.innerHeight);
         if (isOffscreen) {
