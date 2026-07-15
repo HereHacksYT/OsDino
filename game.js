@@ -5,7 +5,7 @@ const baseMoveSpeed = 0.132;
 
 let gameStarted = false;
 let walkCycle = 0;
-let tailMesh;
+let tailMesh, leftArmMesh, rightArmMesh, leftLegMesh, rightLegMesh;
 
 const keys = {};
 let joystickActive = false;
@@ -30,6 +30,7 @@ const sizeValEl = document.getElementById('size-val');
 const tierValEl = document.getElementById('tier-val');
 const warningMsgEl = document.getElementById('warning-msg');
 const timerValEl = document.getElementById('timer-val');
+const timerDisplayEl = document.getElementById('timer-display');
 let warningTimeout = null;
 
 const AI_COLORS = [0x3182ce, 0x805ad5, 0xdd6b20, 0xe53e3e, 0x319795];
@@ -75,6 +76,9 @@ function init() {
     spawnAIDinos();      
     setupControls();
     setupAdminPanel();
+
+    // Evrim sayacını gizle
+    if (timerDisplayEl) timerDisplayEl.style.display = 'none';
 
     animate();
 }
@@ -194,51 +198,200 @@ function createDetailedBuilding(width, height, colorHex) {
 
 function buildDinoMesh(colorHex) {
     const group = new THREE.Group();
-    const skinMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.3 });
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const pupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+    const skinMat = new THREE.MeshStandardMaterial({ 
+        color: colorHex, 
+        roughness: 0.3,
+        metalness: 0.1
+    });
+    const darkSkinMat = new THREE.MeshStandardMaterial({ 
+        color: new THREE.Color(colorHex).multiplyScalar(0.6), 
+        roughness: 0.4 
+    });
+    const bellyMat = new THREE.MeshStandardMaterial({ 
+        color: new THREE.Color(colorHex).multiplyScalar(1.3), 
+        roughness: 0.5 
+    });
+    const eyeMat = new THREE.MeshStandardMaterial({ 
+        color: 0xffffff, 
+        roughness: 0.1,
+        emissive: 0x222222
+    });
+    const pupilMat = new THREE.MeshStandardMaterial({ 
+        color: 0x000000,
+        roughness: 0.05
+    });
+    const clawMat = new THREE.MeshStandardMaterial({ 
+        color: 0x1a1a1a, 
+        roughness: 0.2 
+    });
+    const toothMat = new THREE.MeshStandardMaterial({ 
+        color: 0xf5f5f5, 
+        roughness: 0.2 
+    });
 
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 16), skinMat);
+    // --- GÖVDE ---
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.7, 24, 24), skinMat);
     body.scale.set(1, 0.85, 1.3);
     body.position.y = 0.65;
     body.castShadow = true;
+    body.receiveShadow = true;
     group.add(body);
 
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), skinMat);
+    // Sırt dikenleri
+    for (let i = -0.6; i <= 0.6; i += 0.2) {
+        const spike = new THREE.Mesh(
+            new THREE.ConeGeometry(0.06, 0.2, 6),
+            darkSkinMat
+        );
+        spike.position.set(0, 1.1 + Math.abs(i) * 0.3, 0.6 + i * 0.4);
+        spike.rotation.x = -0.2;
+        group.add(spike);
+    }
+
+    // --- KARIN ---
+    const belly = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), bellyMat);
+    belly.scale.set(0.7, 0.6, 1.1);
+    belly.position.set(0, 0.55, 0.65);
+    group.add(belly);
+
+    // --- KAFA ---
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 20, 20), skinMat);
     head.position.set(0, 1.15, 0.55);
     head.castShadow = true;
     group.add(head);
 
-    const snout = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 12), skinMat);
+    // --- ÇENE ---
+    const snout = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 16), skinMat);
     snout.scale.set(1, 0.7, 1.1);
     snout.position.set(0, 1.05, 0.85);
     group.add(snout);
 
-    const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), eyeMat);
+    const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.15, 0.35), skinMat);
+    jaw.position.set(0, 0.98, 0.9);
+    group.add(jaw);
+
+    // --- DİŞLER ---
+    for (let i = -1; i <= 1; i += 0.5) {
+        const tooth = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.08, 4), toothMat);
+        tooth.position.set(i * 0.12, 0.93, 1.05);
+        group.add(tooth);
+    }
+
+    // --- GÖZLER ---
+    const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), eyeMat);
     eyeL.position.set(0.28, 1.25, 0.7);
-    const pupilL = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), pupilMat);
-    pupilL.position.set(0.33, 1.25, 0.76);
-    group.add(eyeL, pupilL);
+    group.add(eyeL);
+    
+    const pupilL = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), pupilMat);
+    pupilL.position.set(0.33, 1.25, 0.77);
+    group.add(pupilL);
 
-    const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), eyeMat);
+    const eyeR = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 12), eyeMat);
     eyeR.position.set(-0.28, 1.25, 0.7);
-    const pupilR = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 8), pupilMat);
-    pupilR.position.set(-0.33, 1.25, 0.76);
-    group.add(eyeR, pupilR);
+    group.add(eyeR);
+    
+    const pupilR = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), pupilMat);
+    pupilR.position.set(-0.33, 1.25, 0.77);
+    group.add(pupilR);
 
+    // Kaş çıkıntıları
+    const browL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.15), darkSkinMat);
+    browL.position.set(0.3, 1.33, 0.68);
+    group.add(browL);
+    
+    const browR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.15), darkSkinMat);
+    browR.position.set(-0.3, 1.33, 0.68);
+    group.add(browR);
+
+    // --- BOYUN ---
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 0.4, 12), skinMat);
+    neck.position.set(0, 0.95, 0.35);
+    group.add(neck);
+
+    // --- KOLLAR ---
+    const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 0.55, 8), skinMat);
+    leftArm.position.set(0.4, 0.55, 0.5);
+    leftArm.rotation.z = 0.3;
+    leftArm.rotation.x = -0.3;
+    leftArm.castShadow = true;
+    group.add(leftArm);
+    leftArmMesh = leftArm;
+
+    const rightArm = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 0.55, 8), skinMat);
+    rightArm.position.set(-0.4, 0.55, 0.5);
+    rightArm.rotation.z = -0.3;
+    rightArm.rotation.x = -0.3;
+    rightArm.castShadow = true;
+    group.add(rightArm);
+    rightArmMesh = rightArm;
+
+    // --- PENÇELER ---
+    for (let side = -1; side <= 1; side += 2) {
+        for (let i = -1; i <= 1; i++) {
+            const claw = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.12, 6), clawMat);
+            claw.position.set(side * (0.45 + i * 0.06), 0.25, 0.65);
+            claw.rotation.x = -0.5;
+            group.add(claw);
+        }
+    }
+
+    // --- BACAKLAR ---
+    const leftLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.5, 10), skinMat);
+    leftLeg.position.set(0.35, 0.25, -0.3);
+    leftLeg.castShadow = true;
+    group.add(leftLeg);
+    leftLegMesh = leftLeg;
+
+    const rightLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.5, 10), skinMat);
+    rightLeg.position.set(-0.35, 0.25, -0.3);
+    rightLeg.castShadow = true;
+    group.add(rightLeg);
+    rightLegMesh = rightLeg;
+
+    // --- AYAKLAR ---
+    for (let side = -1; side <= 1; side += 2) {
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.08, 0.2), darkSkinMat);
+        foot.position.set(side * 0.35, 0.0, -0.25);
+        group.add(foot);
+
+        for (let i = -1; i <= 1; i += 2) {
+            const toe = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.1, 6), clawMat);
+            toe.position.set(side * 0.35 + i * 0.08, -0.02, -0.15);
+            toe.rotation.x = -0.3;
+            group.add(toe);
+        }
+    }
+
+    // --- KUYRUK ---
     const tail = new THREE.Mesh(new THREE.ConeGeometry(0.25, 1.1, 12), skinMat);
     tail.rotation.x = -Math.PI / 2.8;
     tail.position.set(0, 0.5, -0.9);
     tail.castShadow = true;
     group.add(tail);
 
-    return { group, tail };
+    // Kuyruk ucu
+    const tailTip = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), darkSkinMat);
+    tailTip.position.set(0, 0.15, -1.3);
+    group.add(tailTip);
+
+    return { 
+        group, 
+        tail, 
+        leftArm: leftArmMesh, 
+        rightArm: rightArmMesh,
+        leftLeg: leftLegMesh,
+        rightLeg: rightLegMesh
+    };
 }
 
 function createOsDino() {
     const dino = buildDinoMesh(0x22c55e);
     player = dino.group;
     tailMesh = dino.tail;
+    leftArmMesh = dino.leftArm;
+    rightArmMesh = dino.rightArm;
+    leftLegMesh = dino.leftLeg;
+    rightLegMesh = dino.rightLeg;
     player.position.set(0, 0, 0);
     scene.add(player);
     
@@ -355,11 +508,16 @@ function createSingleAIDino(colorHex, initialScale = null) {
         scale: scale, 
         colorHex: colorHex,
         tail: dinoData.tail,
+        leftArm: dinoData.leftArm,
+        rightArm: dinoData.rightArm,
+        leftLeg: dinoData.leftLeg,
+        rightLeg: dinoData.rightLeg,
         label: labelEl,
         indicator: indicatorEl,
         angle: Math.random() * Math.PI * 2,
         speed: 0.055,
-        needsDelayedGrowth: false
+        needsDelayedGrowth: false,
+        walkCycle: Math.random() * Math.PI * 2
     };
 
     updateAIDinoPhysicalSize(aiObj);
@@ -382,10 +540,8 @@ function calculateVisualScale(realScale) {
     return visualScale;
 }
 
-// Yeme mesafesi - GÖRSEL boyuta göre!
 function getEatRange() {
     const visScale = calculateVisualScale(playerScale);
-    // Görsel boyutla orantılı yeme mesafesi
     return 1.5 * visScale;
 }
 
@@ -393,17 +549,17 @@ function updatePlayerPhysicalSize() {
     const visScale = calculateVisualScale(playerScale);
     player.scale.set(visScale, visScale, visScale);
 
-    let tierText = "🦎 Yavru Dinozor";
+    let tierText = "🦎 Yavru";
     if (playerScale >= 100000) {
-        tierText = "🐉 EFSANEVİ TİTAN (100.000m+)";
+        tierText = "🐉 Titan";
     } else if (playerScale >= 10000) {
-        tierText = "🦖 DEVA ASA (10.000m+)";
+        tierText = "🦖 Deva";
     } else if (playerScale >= 1000) {
-        tierText = "🦕 MUTANT MEGALODON (1.000m+)";
+        tierText = "🦕 Mutant";
     } else if (playerScale >= 100) {
-        tierText = "🐊 ALFA YIRTICI (100m+)";
+        tierText = "🐊 Alfa";
     } else if (playerScale >= 10) {
-        tierText = "🦖 BÜYÜK DİNOZOR (10m+)";
+        tierText = "🦖 Büyük";
     }
 
     tierValEl.innerText = tierText;
@@ -435,25 +591,25 @@ function getBuildingRequiredSize(buildingHeight) {
 function growPlayer(amount) {
     const oldScale = playerScale;
     playerScale += amount;
-    sizeValEl.innerText = playerScale.toFixed(2);
+    sizeValEl.innerText = playerScale.toFixed(1) + "m";
     
     if (oldScale < 10 && playerScale >= 10) {
-        triggerEvolutionUI("🦖 BÜYÜK DİNOZOR OLDUN! ARTIK DAHA GÜÇLÜSÜN!");
+        triggerEvolutionUI("🦖 BÜYÜK DİNOZOR!");
     } else if (oldScale < 100 && playerScale >= 100) {
-        triggerEvolutionUI("🐊 ALFA YIRTICI SEVİYESİNE ULAŞTIN!");
+        triggerEvolutionUI("🐊 ALFA YIRTICI!");
     } else if (oldScale < 1000 && playerScale >= 1000) {
-        triggerEvolutionUI("🦕 MUTANT MEGALODON GÜCÜ KAZANDIN!");
+        triggerEvolutionUI("🦕 MUTANT MEGALODON!");
     } else if (oldScale < 10000 && playerScale >= 10000) {
-        triggerEvolutionUI("🦖 DEVA ASA BOYUTUNA ERİŞTİN!");
+        triggerEvolutionUI("🦖 DEVA ASA!");
     } else if (oldScale < 100000 && playerScale >= 100000) {
-        triggerEvolutionUI("🐉 EFSANEVİ TİTAN OLDUN!!!");
+        triggerEvolutionUI("🐉 EFSANEVİ TİTAN!");
     }
 
     updatePlayerPhysicalSize();
 }
 
 function showSizeWarning(requiredSize) {
-    warningMsgEl.innerText = `Gereken: ${requiredSize.toFixed(1)}m!`;
+    warningMsgEl.innerText = `${requiredSize.toFixed(1)}m gerekli!`;
     warningMsgEl.style.color = '#ef4444';
     warningMsgEl.style.display = 'block';
 
@@ -483,7 +639,7 @@ function setupAdminPanel() {
         const newSize = parseFloat(adminSizeInput.value);
         if (!isNaN(newSize) && newSize > 0) {
             playerScale = newSize;
-            sizeValEl.innerText = playerScale.toFixed(2);
+            sizeValEl.innerText = playerScale.toFixed(1) + "m";
             updatePlayerPhysicalSize();
         }
     });
@@ -590,8 +746,17 @@ function updatePlayer() {
                 player.position.x = nextX;
                 player.position.z = nextZ;
 
-                walkCycle += 0.2;
-                if (tailMesh) tailMesh.rotation.y = Math.sin(walkCycle) * 0.35;
+                walkCycle += 0.25;
+                // Yürüme animasyonu
+                if (leftArmMesh && rightArmMesh) {
+                    leftArmMesh.rotation.x = Math.sin(walkCycle) * 0.4 - 0.3;
+                    rightArmMesh.rotation.x = Math.sin(walkCycle + Math.PI) * 0.4 - 0.3;
+                }
+                if (leftLegMesh && rightLegMesh) {
+                    leftLegMesh.rotation.x = Math.sin(walkCycle + Math.PI) * 0.3;
+                    rightLegMesh.rotation.x = Math.sin(walkCycle) * 0.3;
+                }
+                if (tailMesh) tailMesh.rotation.y = Math.sin(walkCycle) * 0.3;
             }
         }
     }
@@ -668,6 +833,14 @@ function updateAIDinos() {
         ai.mesh.position.z += Math.cos(ai.angle) * ai.speed;
         ai.mesh.rotation.y = ai.angle;
 
+        // AI yürüme animasyonu
+        ai.walkCycle += 0.2;
+        if (ai.leftArm) ai.leftArm.rotation.x = Math.sin(ai.walkCycle) * 0.3 - 0.3;
+        if (ai.rightArm) ai.rightArm.rotation.x = Math.sin(ai.walkCycle + Math.PI) * 0.3 - 0.3;
+        if (ai.leftLeg) ai.leftLeg.rotation.x = Math.sin(ai.walkCycle + Math.PI) * 0.2;
+        if (ai.rightLeg) ai.rightLeg.rotation.x = Math.sin(ai.walkCycle) * 0.2;
+        if (ai.tail) ai.tail.rotation.y = Math.sin(ai.walkCycle) * 0.2;
+
         const tempV = new THREE.Vector3().copy(ai.mesh.position);
         tempV.project(camera);
         const x = (tempV.x * .5 + .5) * window.innerWidth;
@@ -675,7 +848,7 @@ function updateAIDinos() {
 
         ai.label.style.left = `${x}px`;
         ai.label.style.top = `${y}px`;
-        ai.label.innerText = `Dino: ${ai.scale.toFixed(0)}m`;
+        ai.label.innerText = `${ai.scale.toFixed(0)}m`;
 
         const isOffscreen = (x < 0 || x > window.innerWidth || y < 0 || y > window.innerHeight);
         if (isOffscreen) {
@@ -850,7 +1023,8 @@ function updateDangerTimer() {
                 }
             }
         }
-        timerValEl.innerText = dangerTimer;
+        // Sayaç gizli ama çalışıyor
+        if (timerValEl) timerValEl.innerText = dangerTimer;
     }
 
     for (let ai of aiDinos) {
@@ -873,7 +1047,7 @@ function triggerEvolutionUI(message) {
     if (warningTimeout) clearTimeout(warningTimeout);
     warningTimeout = setTimeout(() => {
         warningMsgEl.style.display = 'none';
-    }, 2500);
+    }, 2000);
 }
 
 function onWindowResize() {
