@@ -71,7 +71,7 @@ canvas {
     pointer-events: none;
     z-index: 20;
     text-align: center;
-    display: none; /* JS ile tetiklenecek */
+    display: none;
 }
 
 /* Sade Mobil Joystick */
@@ -113,4 +113,24 @@ canvas {
     z-index: 5;
     transform: translate(-50%, -100%);
     border: 1px solid rgba(255,255,255,0.2);
+}
+
+/* RADAR YÖN OKLARI (YENİ) */
+.radar-indicator {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    pointer-events: none;
+    z-index: 15;
+    font-size: 24px;
+    font-weight: bold;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    transform-origin: 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    margin-left: -20px;
+    margin-top: -20px;
 }
