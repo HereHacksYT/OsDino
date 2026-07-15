@@ -2,32 +2,175 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>OsDino</title>
-    <link rel="stylesheet" href="style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Super Rabbit Adventure Online</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #1a202c;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Başlangıç Ekranı */
+        #start-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(26, 32, 44, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+            font-family: sans-serif;
+            color: white;
+        }
+
+        #play-btn {
+            background-color: #22c55e;
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            transition: transform 0.2s;
+        }
+
+        #play-btn:active {
+            transform: scale(0.95);
+        }
+
+        /* Oyun İçi Arayüz */
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-family: sans-serif;
+            color: white;
+            background: rgba(0, 0, 0, 0.6);
+            padding: 10px 20px;
+            border-radius: 10px;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        #size-display {
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        #warning-msg {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: sans-serif;
+            font-size: 32px;
+            font-weight: bold;
+            color: #f43f5e;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            display: none;
+            z-index: 1000;
+            pointer-events: none;
+        }
+
+        /* Sanal Joystick */
+        #joystick-container {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            width: 120px;
+            height: 120px;
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            touch-action: none;
+        }
+
+        #joystick-knob {
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            transition: transform 0.05s ease-out;
+        }
+
+        /* Yapay Zeka İsim Etiketleri */
+        .ai-label {
+            position: absolute;
+            transform: translate(-50%, -100%);
+            color: white;
+            font-family: sans-serif;
+            font-size: 12px;
+            font-weight: bold;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 2px 6px;
+            border-radius: 4px;
+            pointer-events: none;
+            z-index: 10;
+            white-space: nowrap;
+        }
+
+        /* Radar Okları */
+        .radar-indicator {
+            position: absolute;
+            width: 35px;
+            height: 35px;
+            background: rgba(0,0,0,0.6);
+            border-radius: 50%;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            font-family: sans-serif;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 99;
+            pointer-events: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+    </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
     <div id="start-screen">
-        <div id="start-content">
-            <h1 id="start-title">OSDINO</h1>
-            <p id="start-sub">Şehri Ye, Rakiplerini Atlat, En Büyük Canavar Ol!</p>
-            <button id="play-btn">OYUNA BAŞLA</button>
-        </div>
+        <h1 style="font-size: 42px; margin-bottom: 20px; text-shadow: 0 4px 10px rgba(0,0,0,0.5);">Super Rabbit Adventure (Online)</h1>
+        <button id="play-btn">BAŞLA</button>
     </div>
 
     <div id="ui">
-        <div id="score-container">
-            <div id="score-title">OSDINO BOYUTU</div>
-            <div id="score-board"><span id="size-val">1.00</span><span class="unit">m</span></div>
-        </div>
+        <div id="size-display">Boyutun: <span id="size-val">1.00</span>m</div>
     </div>
 
-    <div id="warning-msg"></div>
+    <div id="warning-msg">Boyutun Yetersiz!</div>
 
     <div id="joystick-container">
         <div id="joystick-knob"></div>
+    </div>
+
+    <button id="admin-btn" style="position: absolute; top: 20px; right: 20px; background-color: #eab308; color: white; border: none; padding: 12px 20px; font-weight: bold; border-radius: 8px; cursor: pointer; z-index: 1000; font-family: sans-serif; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">Admin Panel</button>
+
+    <div id="admin-controls" style="display: none; position: absolute; top: 80px; right: 20px; background: rgba(0,0,0,0.85); color: white; padding: 15px; border-radius: 8px; z-index: 1000; font-family: sans-serif; border: 2px solid #eab308; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+        <h4 style="margin: 0 0 10px 0; color: #eab308; text-align: center;">Dino Kontrol Panel</h4>
+        <label style="font-size: 13px; display: block; margin-bottom: 5px;">Yeni Boyut Belirle (metre):</label>
+        <div style="display: flex; gap: 5px;">
+            <input type="number" id="admin-size-input" value="1" step="1" style="width: 80px; padding: 8px; border-radius: 4px; border: 1px solid #4a5568; background: #2d3748; color: white; font-weight: bold;">
+            <button id="admin-apply-btn" style="background: #22c55e; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold;">Uygula</button>
+        </div>
     </div>
 
     <script src="game.js"></script>
