@@ -31,6 +31,8 @@ const sizeValEl = document.getElementById('size-val');
 const warningMsgEl = document.getElementById('warning-msg');
 let warningTimeout = null;
 
+const AI_COLORS = [0x3182ce, 0x805ad5, 0xdd6b20, 0xe53e3e, 0x319795];
+
 // --- BAŞLANGIÇ (INIT) ---
 function init() {
     scene = new THREE.Scene();
@@ -284,44 +286,52 @@ function spawnCityAssets() {
     }
 }
 
-// --- RAKİP DİNOZORLARIN OLUŞTURULMASI (Toplam 5 AI + Oyuncu = 6 Dinozor) ---
-function spawnAIDinos() {
-    const aiColors = [0x3182ce, 0x805ad5, 0xdd6b20, 0xe53e3e, 0x319795];
+// --- RAKİP DİNOZOR OLUŞTURMA YARDIMCISI ---
+function createSingleAIDino(colorHex, customScale = null) {
+    const scale = customScale !== null ? customScale : (0.8 + Math.random() * 0.6);
+    const dinoData = buildDinoMesh(colorHex);
     
+    const aiGroup = dinoData.group;
+    aiGroup.scale.set(scale, scale, scale);
+    
+    // Oyuncudan uzakta doğma garantisi (En az 25 metre uzakta)
+    let ax, az, distToPlayer;
+    do {
+        ax = (Math.random() - 0.5) * (MAP_SIZE * 1.5);
+        az = (Math.random() - 0.5) * (MAP_SIZE * 1.5);
+        distToPlayer = Math.sqrt(Math.pow(ax - player.position.x, 2) + Math.pow(az - player.position.z, 2));
+    } while (distToPlayer < 25);
+
+    aiGroup.position.set(ax, 0, az);
+    scene.add(aiGroup);
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'ai-label';
+    document.body.appendChild(labelEl);
+
+    const indicatorEl = document.createElement('div');
+    indicatorEl.className = 'radar-indicator';
+    document.body.appendChild(indicatorEl);
+
+    return {
+        mesh: aiGroup,
+        scale: scale,
+        colorHex: colorHex,
+        tail: dinoData.tail,
+        label: labelEl,
+        indicator: indicatorEl,
+        angle: Math.random() * Math.PI * 2,
+        speed: 0.05,
+        walkTime: 0,
+        pendingSuperGrow: false, // Uzaklaşınca aktif olacak %20 büyüme durumu
+        lastGrowCheckTime: Date.now() // Sinsi büyüme zamanlayıcısı (10 sn)
+    };
+}
+
+function spawnAIDinos() {
     for (let i = 0; i < 5; i++) {
-        const scale = 0.8 + Math.random() * 0.6;
-        const dinoData = buildDinoMesh(aiColors[i]);
-        
-        const aiGroup = dinoData.group;
-        aiGroup.scale.set(scale, scale, scale);
-        
-        let ax, az;
-        do {
-            ax = (Math.random() - 0.5) * (MAP_SIZE * 1.5);
-            az = (Math.random() - 0.5) * (MAP_SIZE * 1.5);
-        } while (Math.sqrt(ax*ax + az*az) < 15);
-
-        aiGroup.position.set(ax, 0, az);
-        scene.add(aiGroup);
-
-        const labelEl = document.createElement('div');
-        labelEl.className = 'ai-label';
-        document.body.appendChild(labelEl);
-
-        const indicatorEl = document.createElement('div');
-        indicatorEl.className = 'radar-indicator';
-        document.body.appendChild(indicatorEl);
-
-        aiDinos.push({
-            mesh: aiGroup,
-            scale: scale,
-            tail: dinoData.tail,
-            label: labelEl,
-            indicator: indicatorEl,
-            angle: Math.random() * Math.PI * 2,
-            speed: 0.05,
-            walkTime: 0
-        });
+        const d = createSingleAIDino(AI_COLORS[i]);
+        aiDinos.push(d);
     }
 }
 
@@ -340,7 +350,6 @@ function setupControls() {
     window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
     window.addEventListener('resize', onWindowResize);
 
-    // Play Butonu Tetikleyicisi
     document.getElementById('play-btn').addEventListener('click', () => {
         document.getElementById('start-screen').style.display = 'none';
         gameStarted = true;
@@ -387,7 +396,6 @@ function setupControls() {
     window.addEventListener('mouseup', resetJoystick);
 }
 
-// --- OYUNCU BÜYÜME HIZI (YARI YARIYA DÜŞÜRÜLDÜ) ---
 function updatePlayer() {
     let moveX = 0;
     let moveZ = 0;
@@ -465,7 +473,7 @@ function updateCarsAndBots() {
         if (player.position.distanceTo(car.position) < (playerScale * 0.8) + 0.5) {
             scene.remove(car);
             cars.splice(cars.indexOf(car), 1);
-            growPlayer(0.015); // Oyuncu araba yeme büyümesi yavaşlatıldı (Eski: 0.04)
+            growPlayer(0.015); 
             respawnCar();
         }
     }
@@ -481,33 +489,51 @@ function updateCarsAndBots() {
         if (player.position.distanceTo(bot.position) < (playerScale * 0.8) + 0.2) {
             scene.remove(bot);
             bots.splice(bots.indexOf(bot), 1);
-            growPlayer(0.008); // Oyuncu insan yeme büyümesi yavaşlatıldı (Eski: 0.02)
+            growPlayer(0.008); 
             respawnBot();
         }
     }
 }
 
-// --- AKILLI VE %30 DAHA HIZLI BÜYÜYEN RAKİP DİNOZORLAR ---
+// --- GÜNCEL YAPAY ZEKA SİSTEMİ (SİNSİ BÜYÜME VE PUSU MEKANİĞİ) ---
 function updateAIDinos() {
+    const now = Date.now();
+
     for (let ai of aiDinos) {
         ai.walkTime++;
 
         const distToPlayer = ai.mesh.position.distanceTo(player.position);
-        
-        // --- 1. AKILLI HEDEFLEME SİSTEMİ (Yemek Bulma / Kovalamaca / Kaçış) ---
+
+        // --- 1. SİNSİ BÜYÜME ZAMANLAYICISI (10 saniyede bir tetiklenir) ---
+        if (now - ai.lastGrowCheckTime >= 10000) {
+            ai.pendingSuperGrow = true; // %20 büyüme hakkı kazandı (pusu)
+            ai.lastGrowCheckTime = now;
+        }
+
+        // Büyüme bekliyorsa ve oyuncudan uzaktaysa (30 metreden fazlaysa) BÜYÜ!
+        if (ai.pendingSuperGrow && distToPlayer >= 30) {
+            ai.scale = playerScale * 1.20; // Bizden tam %20 büyük olur
+            ai.mesh.scale.set(ai.scale, ai.scale, ai.scale);
+            ai.pendingSuperGrow = false; // Büyüme hakkı tüketildi
+        }
+
+        // --- 2. AKILLI HEDEFLEME & KOVALAMA MENZİLİ (20 Metreden kovalama) ---
         let targetPos = null;
 
-        if (ai.scale > playerScale) {
-            // Bizden büyükse doğrudan bizi kovalasın
-            targetPos = player.position;
-        } else if (ai.scale < playerScale && distToPlayer < 18) {
-            // Bizden küçükse ve çok yakınımızdaysa kaçsın
-            ai.angle = Math.atan2(ai.mesh.position.x - player.position.x, ai.mesh.position.z - player.position.z);
+        if (distToPlayer <= 20) {
+            // Mesafe 20 metre altındaysa:
+            if (ai.scale > playerScale) {
+                // Bizden büyükse vahşi bir şekilde bizi kovalar!
+                targetPos = player.position;
+            } else if (ai.scale < playerScale) {
+                // Bizden küçükse korkarak zıt yöne kaçar!
+                ai.angle = Math.atan2(ai.mesh.position.x - player.position.x, ai.mesh.position.z - player.position.z);
+            }
         } else {
-            // Kaçma veya kovalama yoksa EN YAKIN YEMEĞE yönelsin! (Büyümek için çabalar)
-            let nearestDist = 20; // Arama yarıçapı
+            // Mesafe 20 metrenin dışındaysa en yakın yemeğe yönelip büyümeye çalışır!
+            let nearestDist = 25; 
 
-            // Binaları ara
+            // Yakındaki Binalar
             for (let b of buildings) {
                 if (b.userData.isEaten) continue;
                 const req = b.userData.height * 0.35;
@@ -520,7 +546,7 @@ function updateAIDinos() {
                 }
             }
 
-            // Arabaları ara
+            // Yakındaki Arabalar
             for (let car of cars) {
                 const d = ai.mesh.position.distanceTo(car.position);
                 if (d < nearestDist) {
@@ -529,7 +555,7 @@ function updateAIDinos() {
                 }
             }
 
-            // İnsanları (Botları) ara
+            // Yakındaki İnsanlar
             for (let bot of bots) {
                 const d = ai.mesh.position.distanceTo(bot.position);
                 if (d < nearestDist) {
@@ -539,10 +565,11 @@ function updateAIDinos() {
             }
         }
 
+        // Hedefe yönelme hareketleri
         if (targetPos) {
             ai.angle = Math.atan2(targetPos.x - ai.mesh.position.x, targetPos.z - ai.mesh.position.z);
         } else if (ai.walkTime % 80 === 0) {
-            ai.angle = Math.random() * Math.PI * 2; // Hedef yoksa rastgele dolanır
+            ai.angle = Math.random() * Math.PI * 2;
         }
 
         const nextX = ai.mesh.position.x + Math.sin(ai.angle) * ai.speed;
@@ -556,8 +583,7 @@ function updateAIDinos() {
             ai.angle += Math.PI;
         }
 
-        // --- 2. RAKİPLERİN BÜYÜME MEKANİKLERİ (%30 EKSTRA HIZLI) ---
-        // Bina yemek
+        // --- 3. DOĞAL BÜYÜME (Çevreyi Yiyerek Büyüme - %30 Ekstra Hızlı) ---
         for (let b of buildings) {
             if (b.userData.isEaten) continue;
             const dist = ai.mesh.position.distanceTo(b.position);
@@ -565,29 +591,26 @@ function updateAIDinos() {
             
             if (dist < (b.userData.width/2) + (ai.scale*0.5) && ai.scale > req) {
                 eatBuilding(b, false);
-                // Oyuncunun kazandığı büyüme değerinin 1.30 katını (%30 fazlası) kazanır
                 ai.scale += (b.userData.height * 0.012) * 1.30; 
                 ai.mesh.scale.set(ai.scale, ai.scale, ai.scale);
             }
         }
 
-        // Araba yemek
         for (let car of cars) {
             if (ai.mesh.position.distanceTo(car.position) < (ai.scale * 0.8) + 0.5) {
                 scene.remove(car);
                 cars.splice(cars.indexOf(car), 1);
-                ai.scale += 0.015 * 1.30; // %30 fazla büyüme
+                ai.scale += 0.015 * 1.30; 
                 ai.mesh.scale.set(ai.scale, ai.scale, ai.scale);
                 respawnCar();
             }
         }
 
-        // İnsan yemek
         for (let bot of bots) {
             if (ai.mesh.position.distanceTo(bot.position) < (ai.scale * 0.8) + 0.2) {
                 scene.remove(bot);
                 bots.splice(bots.indexOf(bot), 1);
-                ai.scale += 0.008 * 1.30; // %30 fazla büyüme
+                ai.scale += 0.008 * 1.30; 
                 ai.mesh.scale.set(ai.scale, ai.scale, ai.scale);
                 respawnBot();
             }
@@ -595,7 +618,7 @@ function updateAIDinos() {
 
         if (ai.tail) ai.tail.rotation.y = Math.sin(Date.now() * 0.01) * 0.35;
 
-        // --- UI VE RADAR GÖSTERGESİ ---
+        // --- 4. ARAYÜZ ETİKETLERİ ---
         const tempV = new THREE.Vector3(ai.mesh.position.x, ai.mesh.position.y + (ai.scale * 1.5), ai.mesh.position.z);
         tempV.project(camera);
         const x = (tempV.x * .5 + .5) * window.innerWidth;
@@ -633,14 +656,25 @@ function updateAIDinos() {
             ai.indicator.style.display = 'none';
         }
 
-        // --- SAVAŞ ---
+        // --- 5. SAVAŞ & 10 SANİYE SONRA UZAKTA RESPAWN OLMA SİSTEMİ ---
         if (distToPlayer < (playerScale * 0.7) + (ai.scale * 0.7)) {
             if (playerScale > ai.scale) {
+                const savedColor = ai.colorHex;
+
+                // Sahneden ve ekran arayüzünden kaldır
                 scene.remove(ai.mesh);
                 ai.label.remove();
                 ai.indicator.remove();
                 aiDinos.splice(aiDinos.indexOf(ai), 1);
+
                 growPlayer(ai.scale * 0.1); 
+
+                // Ölen dinozor için sinsi 10 saniye respawn sayacı başlar
+                setTimeout(() => {
+                    const respawnedDino = createSingleAIDino(savedColor, playerScale * 0.85); // Oyuncuya yakın boyutta sinsi canlanır
+                    aiDinos.push(respawnedDino);
+                }, 10000);
+
             } else {
                 alert("Senden daha büyük bir dinozor seni yedi! Yeniden başlıyor...");
                 location.reload();
@@ -649,7 +683,7 @@ function updateAIDinos() {
     }
 }
 
-// --- YEME VE DOĞMA SÜRELERİ ---
+// --- BİNA YEME VE DOĞMA ---
 function eatBuilding(building, isPlayer) {
     building.userData.isEaten = true;
     
@@ -660,7 +694,6 @@ function eatBuilding(building, isPlayer) {
             clearInterval(shrink);
             scene.remove(building);
             
-            // 2 Kat yavaşlama: 6 saniye sonra yeniden doğar
             setTimeout(() => {
                 respawnBuilding(building);
             }, 6000); 
@@ -671,7 +704,7 @@ function eatBuilding(building, isPlayer) {
     }, 25);
 
     if (isPlayer) {
-        growPlayer(building.userData.height * 0.012); // Oyuncu büyüme hızı düşürüldü (Eski: 0.03)
+        growPlayer(building.userData.height * 0.007); // Oyuncunun binalardan büyüme katsayısı daha da yavaşlatıldı (Eski: 0.012)
     }
 }
 
@@ -750,12 +783,11 @@ function onWindowResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// --- DÖNGÜ (ANIMATE) ---
+// --- ANİMASYON / OYUN DÖNGÜSÜ ---
 function animate() {
     requestAnimationFrame(animate);
 
     if (!gameStarted) {
-        // Oyun başlamadan önce sadece sahneyi çizer, hareketleri ve güncellemeleri çalıştırmaz.
         renderer.render(scene, camera);
         return;
     }
@@ -764,7 +796,7 @@ function animate() {
     updateCarsAndBots();
     updateAIDinos();
 
-    // Kamera Takibi
+    // Kamera Takip Sınırlandırması
     const targetCamY = player.position.y + 7.5 + (playerScale * 3.5);
     const targetCamZ = player.position.z - 11.5 - (playerScale * 4.5);
 
